@@ -1512,25 +1512,7 @@
         }
 
         // Default menu items
-        const defaultMenu = [
-            { id: 'dft-001', name: '草莓蛋糕', category: '甜品', price: 28, image: 'https://images.unsplash.com/photo-1565958011703-44f9829ba187?w=400' },
-            { id: 'dft-002', name: '提拉米苏', category: '甜品', price: 32, image: 'https://images.unsplash.com/photo-1571877227200-a0d98ea607e9?w=400' },
-            { id: 'dft-003', name: '珍珠奶茶', category: '饮品', price: 18, image: 'https://images.unsplash.com/photo-1558857563-b371033873b8?w=400' },
-            { id: 'dft-004', name: '芒果冰沙', category: '饮品', price: 22, image: 'https://images.unsplash.com/photo-1546173159-315724a31696?w=400' },
-            { id: 'dft-005', name: '牛奶燕麦粥', category: '主食', price: 12, image: 'https://images.unsplash.com/photo-1517673132405-a56a62b18caf?w=400' },
-            { id: 'dft-006', name: '煎蛋吐司', category: '小吃', price: 10, image: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=400' },
-            { id: 'dft-007', name: '意式披萨', category: '主食', price: 45, image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400' },
-            { id: 'dft-008', name: '番茄炒蛋', category: '菜品', price: 22, image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400' },
-            { id: 'dft-009', name: '薯条', category: '小吃', price: 15, image: 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=400' },
-            { id: 'dft-010', name: '麻婆豆腐', category: '菜品', price: 26, image: 'https://images.unsplash.com/photo-1582452919408-9cfcfd1bb1c1?w=400' },
-            { id: 'dft-011', name: '红烧排骨', category: '菜品', price: 38, image: 'https://images.unsplash.com/photo-1544025162-d76694265947?w=400' }
-        ];
-
-        // Initialize
-        if (menuItems.length === 0) {
-            menuItems = defaultMenu;
-            saveMenuItems();
-        }
+        // Initialize — start with empty menu, chef adds dishes manually
 
         // DOM Elements
         const menuGrid = document.getElementById('menuGrid');
