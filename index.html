@@ -2022,11 +2022,10 @@
         function updateNotifyBell() {
             if (currentMode !== 'customer') { notifyTabBtn.style.display = 'none'; return; }
             notifyTabBtn.style.display = '';
-            const unread = notifications.filter(n => !n.read).length;
-            const hasImportant = notifications.some(n => !n.read && n.important);
-            console.log('🔔 通知更新: 未读=' + unread + ' 重要=' + hasImportant + ' 总数=' + notifications.length);
+            const total = notifications.length;
+            const hasImportant = notifications.some(n => n.important);
             notifyTabBtn.childNodes[0].textContent = (hasImportant ? '🚨' : '🔔') + ' 消息 ';
-            notifyBadge.textContent = unread;
+            notifyBadge.textContent = total;
             notifyBadge.style.display = 'inline';
             notifyBadge.style.background = hasImportant ? '#e74c3c' : '';
         }
