@@ -1287,12 +1287,12 @@
 <body>
     <div class="hearts-bg" id="heartsBg"></div>
 
-    <!-- Login Page -->
+    <!-- Login / Loading Page -->
     <div class="login-overlay" id="loginOverlay">
-        <div class="login-card">
+        <div class="login-card" id="loginCard">
             <div class="login-title">宝贝点餐台 💕</div>
-            <div class="login-subtitle">选择你的身份开始吧~</div>
-            <div class="login-options">
+            <div class="login-subtitle" id="loginSubtitle">⏳ 正在同步云端数据...</div>
+            <div class="login-options" id="loginOptions" style="display:none;">
                 <div class="login-option" data-login="customer">
                     <div class="login-emoji">👧</div>
                     <div class="login-role">宝贝点菜</div>
@@ -1304,6 +1304,7 @@
                     <div class="login-desc">管理菜品、处理请求</div>
                 </div>
             </div>
+            <div class="login-subtitle" id="loadingMsg" style="display:none;">⏳ 正在同步云端数据...</div>
         </div>
     </div>
 
@@ -2915,12 +2916,18 @@
             setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
-        // Initial Render — skip login if role remembered
+        // Initial Render — show loading, wait for cloud, then enter
+        const loginCard = document.getElementById('loginCard');
+        const loginSubtitle = document.getElementById('loginSubtitle');
+        const loginOptions = document.getElementById('loginOptions');
+        const loadingMsg = document.getElementById('loadingMsg');
         const savedRole = localStorage.getItem('savedMode');
+
+        // Show loading overlay immediately
+        loginOverlay.classList.remove('hidden');
         if (savedRole) {
-            enterApp(savedRole);
-        } else {
-            loginOverlay.classList.remove('hidden');
+            loginOptions.style.display = 'none';
+            loadingMsg.style.display = '';
         }
 
         async function boot() {
@@ -2937,9 +2944,17 @@
                     } catch (e) { console.warn('initData 失败: ' + e.message); }
                 }
             } catch (e) { console.error('启动异常: ' + e.message); }
-            // Polling ALWAYS starts, no matter what
             setupPolling();
             console.log('✅ 启动完成, 菜单=' + menuItems.length + ' 订单=' + orderHistory.length);
+
+            // Data ready — enter app or show login
+            if (savedRole) {
+                enterApp(savedRole);
+            } else {
+                loginOptions.style.display = '';
+                loadingMsg.style.display = 'none';
+                loginSubtitle.textContent = '选择你的身份开始吧~';
+            }
         }
         boot();
     </script>
