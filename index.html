@@ -1957,54 +1957,46 @@
                 return;
             }
 
-            // Group by meal time from order (customer-selected)
-            const groups = {};
-            todayOrders.forEach(order => {
-                const mt = order.mealTime || 'dinner';
-                if (!groups[mt]) groups[mt] = [];
-                groups[mt].push(order);
-            });
-
             const mealLabels = { breakfast: '早餐 🌅', lunch: '午餐 ☀️', dinner: '晚餐 🌙' };
             const mealOrder = ['breakfast', 'lunch', 'dinner'];
 
             let html = '';
             mealOrder.forEach(meal => {
-                if (!groups[meal] || groups[meal].length === 0) return;
-                html += `<div class="chef-order-group">
-                    <div class="chef-meal-header">${mealLabels[meal]}</div>`;
-                groups[meal].forEach(order => {
-                    const timeStr = new Date(order.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-                    const statusClass = order.status === 'accepted' ? 'accepted' : order.status === 'declined' ? 'declined' : '';
-                    const isDone = order.status === 'accepted' || order.status === 'declined';
-                    html += `<div class="chef-order-card ${statusClass}">
-                        <div class="chef-order-items">
-                            ${order.items.map(item => `
-                                <div class="chef-order-item-row">
-                                    ${item.image ? `<img class="chef-order-item-img" src="${item.image}" alt="${item.name}" onerror="this.style.display='none'">` : ''}
-                                    <div class="chef-order-item-info">
-                                        <div class="name">${item.name}</div>
-                                        <div class="meta">x${item.qty} · ¥${item.price.toFixed(2)}</div>
-                                    </div>
-                                </div>
-                            `).join('')}
+                const mealOrders = todayOrders.filter(o => (o.mealTime || 'dinner') === meal);
+                if (mealOrders.length === 0) return;
+
+                // Merge same-named items across orders in this meal
+                const merged = {};
+                mealOrders.forEach(order => {
+                    (order.items || []).forEach(item => {
+                        const key = item.menuItemId || item.name;
+                        if (!merged[key]) merged[key] = { ...item, qty: 0 };
+                        merged[key].qty += item.qty;
+                    });
+                });
+
+                html += `<div class="chef-order-group"><div class="chef-meal-header">${mealLabels[meal]}</div><div class="chef-order-card"><div class="chef-order-items">`;
+                const entries = Object.values(merged);
+                entries.forEach(m => {
+                    const sid = m.menuItemId || '';
+                    html += `<div class="chef-order-item-row">
+                        ${m.image ? `<img class="chef-order-item-img" src="${m.image}" alt="${m.name}" onerror="this.style.display='none'">` : ''}
+                        <div class="chef-order-item-info">
+                            <div class="name">${m.name}${m.qty > 1 ? ' x' + m.qty : ''}</div>
+                            <div class="meta">¥${m.price.toFixed(2)}/份 · 共¥${(m.price * m.qty).toFixed(2)}</div>
                         </div>
-                        <div class="chef-order-meta">
-                            <div class="chef-order-time">${timeStr}</div>
-                            <div class="chef-order-total">¥${order.total.toFixed(2)}</div>
-                            ${isDone ? `<span class="chef-status-badge ${order.status}">${order.status === 'accepted' ? '已接单 ✅' : '已婉拒 ✕'}</span>` + (order.declineReason ? `<div style="font-size:0.75rem;color:var(--text-light);margin-top:4px;max-width:120px;text-align:right;">${order.declineReason}</div>` : '') : `
-                                <div class="chef-order-actions">
-                                    <button class="accept-btn" onclick="acceptOrder('${order.id}')">接单 ✨</button>
-                                    <button class="decline-btn" onclick="declineOrder('${order.id}')">婉拒 😢</button>
-                                </div>
-                            `}
+                        <div style="flex-shrink:0;text-align:right;">
+                            <div class="chef-order-actions">
+                                <button class="accept-btn" onclick="acceptItem('${sid}', '${m.name.replace(/'/g, "\\'")}', ${m.qty}, '${meal}')">接单 ✨</button>
+                                <button class="decline-btn" onclick="declineItem('${sid}', '${m.name.replace(/'/g, "\\'")}', ${m.qty}, '${meal}')">婉拒 😢</button>
+                            </div>
                         </div>
                     </div>`;
                 });
-                html += '</div>';
+                html += `</div></div></div>`;
             });
 
-            menuGrid.innerHTML = html;
+            menuGrid.innerHTML = html || '<div class="empty-state"><div class="empty-state-icon">📋</div><p>今天还没有订单，等宝贝点菜吧~</p></div>';
         }
 
         // Notification system
@@ -2072,6 +2064,56 @@
             notifications.forEach(n => n.read = true);
             saveNotifications();
             updateNotifyBell();
+        }
+
+        // Per-item accept/decline
+        async function acceptItem(menuItemId, name, qty, meal) {
+            const updated = [];
+            orderHistory.forEach(order => {
+                if (!order.timestamp || !isToday(order.timestamp)) return;
+                if ((order.mealTime || 'dinner') !== meal) return;
+                (order.items || []).forEach(item => {
+                    if ((item.menuItemId || item.name) === (menuItemId || name)) {
+                        item.status = 'accepted';
+                        updated.push(item.name);
+                    }
+                });
+            });
+            saveOrders();
+            addNotification(null, 'item_accepted', `男友接单啦~「${name}」x${qty} 马上做！🔥`, false);
+            renderChefOrders();
+            showToast('已接单 ✨');
+        }
+
+        async function declineItem(menuItemId, name, qty, meal) {
+            let declineQty = qty;
+            if (qty > 1) {
+                const input = prompt(`「${name}」共 ${qty} 份，要婉拒几份？`, qty);
+                if (input === null) return;
+                declineQty = Math.max(1, Math.min(qty, parseInt(input) || qty));
+            }
+            const reason = await showDeclineModal(`${name}${declineQty < qty ? ' x' + declineQty : ''}`);
+            if (!reason) return;
+            let remaining = declineQty;
+            orderHistory.forEach(order => {
+                if (!order.timestamp || !isToday(order.timestamp)) return;
+                if ((order.mealTime || 'dinner') !== meal) return;
+                (order.items || []).forEach(item => {
+                    if (remaining <= 0) return;
+                    if ((item.menuItemId || item.name) === (menuItemId || name) && item.status !== 'declined') {
+                        item.status = 'declined';
+                        item.declineReason = reason;
+                        remaining--;
+                    }
+                });
+            });
+            saveOrders();
+            const msg = declineQty < qty
+                ? `男友婉拒了「${name}」中的 ${declineQty} 份：${reason} 😢\n剩余 ${qty - declineQty} 份待确认`
+                : `男友说「${name}」做不了：${reason} 😢`;
+            addNotification(null, 'item_declined', msg, true);
+            renderChefOrders();
+            showToast('已婉拒');
         }
 
         function acceptOrder(orderId) {
@@ -2579,7 +2621,7 @@
                 status: 'pending',
                 items: items.map(([id, qty]) => {
                     const item = menuItems.find(i => i.id === id);
-                    return { menuItemId: id, name: item.name, qty, price: item.price, image: item.image || '' };
+                    return { menuItemId: id, name: item.name, qty, price: item.price, image: item.image || '', status: 'pending' };
                 }),
                 total: items.reduce((sum, [id, qty]) => {
                     const item = menuItems.find(i => i.id === id);
