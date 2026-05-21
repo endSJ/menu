@@ -1733,6 +1733,9 @@
                         notifications = cloudNotifs;
                         updateNotifyBell();
                         if (newNotifs.length > 0) showPendingNotifications();
+                        if (document.getElementById('notify-section').classList.contains('active')) {
+                            renderNotifyPanel();
+                        }
                     }
                     const cloudReqs = await loadFromCloud('dish_requests');
                     if (JSON.stringify(cloudReqs) !== JSON.stringify(dishRequests)) {
