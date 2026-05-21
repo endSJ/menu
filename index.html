@@ -2183,40 +2183,48 @@
         }
 
         function updateResponseBadge() {
+            requestResponseBtn.style.display = '';
             const unread = dishRequests.filter(r => (r.fulfilled || r.declined) && !r.seenByGirl);
             const count = unread.length;
             if (count > 0) {
-                requestResponseBtn.style.display = '';
                 responseBadge.textContent = count;
                 responseBadge.style.display = '';
             } else {
                 responseBadge.style.display = 'none';
-                if (!dishRequests.some(r => r.fulfilled || r.declined)) {
-                    requestResponseBtn.style.display = 'none';
-                }
             }
         }
 
         function renderRequestResponses() {
             const responded = dishRequests.filter(r => r.fulfilled || r.declined).reverse();
-            requestResponseContent.innerHTML = responded.length ? responded.map(r => {
+            if (responded.length === 0) {
+                requestResponseContent.innerHTML = '<div style="text-align:center;color:var(--text-light);">暂无回复</div>';
+                return;
+            }
+            requestResponseContent.innerHTML = responded.map(r => {
+                let statusHtml = '';
                 if (r.fulfilled) {
-                    return `<div style="padding:10px 0;border-bottom:1px dashed var(--tiffany-light);">
-                        <div>📝 <b>${r.name}</b></div>
-                        <div style="color:var(--tiffany-dark);font-size:0.85rem;margin-top:4px;">✅ 男友安排上啦，等你来点~</div>
-                    </div>`;
+                    statusHtml = `<div style="color:var(--tiffany-dark);font-size:0.85rem;margin-top:4px;">✅ 男友安排上啦，等你来点~</div>`;
                 } else {
-                    return `<div style="padding:10px 0;border-bottom:1px dashed var(--tiffany-light);">
-                        <div>📝 <b>${r.name}</b></div>
-                        <div style="color:#d63031;font-size:0.85rem;margin-top:4px;">😢 男友这次做不了啦</div>
-                        <div style="color:var(--text-light);font-size:0.8rem;">${r.declinedReason || ''}</div>
-                    </div>`;
+                    statusHtml = `<div style="color:#d63031;font-size:0.85rem;margin-top:4px;">😢 男友这次做不了啦</div>
+                        <div style="color:var(--text-light);font-size:0.8rem;">${r.declinedReason || ''}</div>`;
                 }
-            }).join('') : '<div style="text-align:center;color:var(--text-light);">暂无回复</div>';
+                return `<div style="padding:10px 0;border-bottom:1px dashed var(--tiffany-light);display:flex;justify-content:space-between;align-items:flex-start;">
+                    <div style="flex:1;">
+                        <div>📝 <b>${r.name}</b></div>
+                        ${statusHtml}
+                    </div>
+                    <button onclick="event.stopPropagation(); markResponseRead('${r.id}')"
+                        style="padding:4px 12px;border:1px solid var(--tiffany-light);border-radius:12px;background:white;color:var(--text-light);font-size:0.78rem;cursor:pointer;flex-shrink:0;margin-left:8px;">已读</button>
+                </div>`;
+            }).join('');
+            updateResponseBadge();
+        }
 
-            // Mark all as seen
-            dishRequests.forEach(r => { if (r.fulfilled || r.declined) r.seenByGirl = true; });
+        function markResponseRead(requestId) {
+            dishRequests = dishRequests.filter(r => r.id !== requestId);
             saveRequests();
+            deleteFromCloud('dish_requests', requestId);
+            renderRequestResponses();
             updateResponseBadge();
         }
 
