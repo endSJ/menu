@@ -1607,23 +1607,15 @@
 
             const [cloudMenu, cloudOrders, cloudRequests, cloudNotifs] = results;
 
-            // Cloud wins if it has data, otherwise upload local to cloud
+            // Cloud is the single source of truth. Never auto-upload.
             if (cloudMenu.length > 0) {
                 menuItems = cloudMenu.map(normalizeMenuItem);
                 safeSet('menuItems', menuItems);
-            } else if (menuItems.length > 0) {
-                console.log('⬆️ 云端无数据，上传本地 ' + menuItems.length + ' 条菜单...');
-                menuItems = menuItems.map(normalizeMenuItem);
-                await Promise.all(menuItems.map(item => saveToCloud('menu_items', item.id, item)));
             }
 
             if (cloudOrders.length > 0) {
                 orderHistory = cloudOrders.map(normalizeOrder);
                 safeSet('orderHistory', orderHistory);
-            } else if (orderHistory.length > 0) {
-                console.log('⬆️ 云端无数据，上传本地 ' + orderHistory.length + ' 条订单...');
-                orderHistory = orderHistory.map(normalizeOrder);
-                await Promise.all(orderHistory.map(o => saveToCloud('orders', o.id, o)));
             }
 
             if (cloudRequests.length > 0) {
@@ -1641,9 +1633,9 @@
             cart = nc;
         }
 
-        // Force pull latest from cloud
+        // Pull latest from cloud (read-only, never uploads)
         async function syncNow() {
-            if (!cloudOk) return;
+            if (!cloudOk) { showToast('云端未连接'); return; }
             showToast('同步中... 🔄');
             const [cloudMenu, cloudOrders, cloudRequests, cloudNotifs] = await Promise.all([
                 loadFromCloud('menu_items'),
@@ -1651,17 +1643,41 @@
                 loadFromCloud('dish_requests'),
                 loadFromCloud('notifications')
             ]);
-            if (cloudMenu.length) { menuItems = cloudMenu.map(normalizeMenuItem); safeSet('menuItems', menuItems); }
-            if (cloudOrders.length) { orderHistory = cloudOrders.map(normalizeOrder); safeSet('orderHistory', orderHistory); }
-            if (cloudRequests.length) { dishRequests = cloudRequests; safeSet('dishRequests', dishRequests); }
-            if (cloudNotifs.length) { notifications = cloudNotifs; safeSet('notifications', notifications); }
-            renderCategories();
-            renderMenu();
-            updateNotifyBell();
-            updateRequestBadge();
-            if (currentMode === 'chef') renderChefOrders();
-            showToast('同步完成 ✅');
+            let changed = false;
+            if (cloudMenu.length > 0) {
+                menuItems = cloudMenu.map(normalizeMenuItem); safeSet('menuItems', menuItems); changed = true;
+            }
+            if (cloudOrders.length > 0) {
+                orderHistory = cloudOrders.map(normalizeOrder); safeSet('orderHistory', orderHistory); changed = true;
+            }
+            if (cloudRequests.length > 0) {
+                dishRequests = cloudRequests; safeSet('dishRequests', dishRequests); changed = true;
+            }
+            if (cloudNotifs.length > 0) {
+                notifications = cloudNotifs; safeSet('notifications', notifications); changed = true;
+            }
+            if (changed) {
+                renderCategories();
+                renderMenu();
+                renderManageMenu();
+                updateNotifyBell();
+                updateRequestBadge();
+                if (currentMode === 'chef') renderChefOrders();
+            }
+            showToast('同步完成 ✅ 菜单' + menuItems.length + ' 订单' + orderHistory.length);
         }
+
+        // Upload all local data to cloud (chef-only initial setup)
+        async function uploadAllToCloud() {
+            if (!cloudOk) { showToast('云端未连接'); return; }
+            showToast('上传中... ⬆️');
+            await Promise.all(menuItems.map(item => saveToCloud('menu_items', item.id, item)));
+            await Promise.all(orderHistory.map(o => saveToCloud('orders', o.id, o)));
+            await Promise.all(dishRequests.map(r => saveToCloud('dish_requests', r.id, r)));
+            await Promise.all(notifications.map(n => saveToCloud('notifications', n.id, n)));
+            showToast('上传完成 ✅ 菜单' + menuItems.length + ' 订单' + orderHistory.length);
+        }
+        window.uploadAllToCloud = uploadAllToCloud;
 
         // ── Cloud polling (replaces Realtime, no SDK needed) ─────
 
