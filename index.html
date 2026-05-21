@@ -2819,7 +2819,7 @@
             modalTextarea.style.display = 'none';
             modalTextarea.value = '';
             modalIcon.textContent = icon;
-            modalMessage.textContent = message;
+            modalMessage.innerHTML = message.replace(/\n/g, '<br>');
             modalConfirm.textContent = confirmText;
             modalOverlay.style.display = 'flex';
             return new Promise((resolve) => {
@@ -2894,18 +2894,41 @@
         }
 
         async function deleteMenuItem(id) {
-            const confirmed = await showConfirm('确定要删除这个菜品吗？', '😢', '确定删除');
+            const item = menuItems.find(m => m.id === id);
+            if (!item) return;
+            // Check if this dish is in any today's orders
+            const affectedOrders = orderHistory.filter(o =>
+                o.timestamp && isToday(o.timestamp) &&
+                o.items.some(i => i.menuItemId === id || i.name === item.name)
+            );
+            let msg = `确定要删除「${item.name}」吗？`;
+            if (affectedOrders.length > 0) {
+                const orderNames = affectedOrders.map(o => {
+                    const ts = new Date(o.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                    return `${MEAL_LABELS[o.mealTime] || ''} ${ts}`;
+                }).join('、');
+                msg += `\n⚠️ 今日有 ${affectedOrders.length} 笔订单包含此菜品（${orderNames}），删除后对应订单也会一并移除。`;
+            }
+            const confirmed = await showConfirm(msg, '😢', '确定删除');
             if (confirmed) {
-                menuItems = menuItems.filter(item => item.id !== id);
+                menuItems = menuItems.filter(m => m.id !== id);
                 delete cart[id];
                 saveCart();
-                // Delete from cloud; local is already correct
                 await deleteMenuItemCloud(id);
+                // Also remove affected orders
+                if (affectedOrders.length > 0) {
+                    for (const o of affectedOrders) {
+                        deleteFromCloud('orders', o.id);
+                    }
+                    orderHistory = orderHistory.filter(o => !affectedOrders.includes(o));
+                    saveOrders();
+                }
                 renderCategories();
                 renderMenu();
                 renderOrderPanel();
                 renderManageMenu();
-                showToast('菜品已下架');
+                renderChefOrders();
+                showToast('菜品及关联订单已清理');
             }
         }
 
