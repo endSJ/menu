@@ -1531,20 +1531,22 @@
         }
 
         async function saveToCloud(table, id, payload) {
-            if (!cloudOk) return;
+            if (!cloudOk) { console.warn('❌ cloudOk=false, 跳过保存 ' + table + '/' + id); return; }
             try {
                 const body = JSON.stringify({ id: String(id), data: payload });
-                if (body.length > 900000) { console.warn('Too large:', table, id, body.length); return; }
+                if (body.length > 900000) { console.warn('⚠️ 数据过大: ' + table + ' ' + id + ' ' + body.length); return; }
                 const res = await fetch(`${SB_URL}/${table}`, {
                     method: 'POST',
                     headers: { ...SB_HEADERS, Prefer: 'resolution=merge-duplicates' },
                     body
                 });
-                if (!res.ok) {
-                    console.warn('Save failed:', table, id, res.status);
+                if (res.ok) {
+                    console.log('✅ 已保存到云端: ' + table + '/' + id);
+                } else {
+                    console.warn('❌ 保存失败 HTTP ' + res.status + ': ' + table + '/' + id);
                     if (res.status === 401 || res.status === 403) cloudOk = false;
                 }
-            } catch (e) { console.warn('Save error:', table, id, e.message); }
+            } catch (e) { console.error('❌ 保存异常: ' + table + '/' + id + ' - ' + e.message); }
         }
 
         async function deleteFromCloud(table, id) {
@@ -2582,6 +2584,7 @@
             };
 
             menuItems.push(newItem);
+            console.log('📝 新增菜品: ' + name + ' (cloudOk=' + cloudOk + ')');
             saveMenuItems();
             renderCategories();
             renderMenu();
@@ -2729,12 +2732,15 @@
         loginOverlay.classList.remove('hidden');
 
         async function boot() {
+            console.log('🚀 启动中...');
             try {
                 cloudOk = await checkCloud();
+                console.log('☁️ 云端状态: ' + (cloudOk ? '连接成功' : '未连接'));
                 if (cloudOk) await initData();
                 setupPolling();
+                console.log('✅ 启动完成, 菜单=' + menuItems.length + ' 订单=' + orderHistory.length);
             } catch (e) {
-                console.warn('Boot error:', e.message);
+                console.error('Boot error:', e.message);
             }
         }
         boot();
