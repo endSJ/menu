@@ -1965,31 +1965,36 @@
                 const mealOrders = todayOrders.filter(o => (o.mealTime || 'dinner') === meal);
                 if (mealOrders.length === 0) return;
 
-                // Merge same-named items across orders in this meal
+                // Merge items by status (each item is 1 portion now)
                 const merged = {};
                 mealOrders.forEach(order => {
                     (order.items || []).forEach(item => {
                         const key = item.menuItemId || item.name;
-                        if (!merged[key]) merged[key] = { ...item, qty: 0 };
-                        merged[key].qty += item.qty;
+                        if (!merged[key]) merged[key] = { ...item, qty: 0, acceptedQty: 0, declinedQty: 0, declineReason: '' };
+                        merged[key].qty += 1;
+                        if (item.status === 'accepted') merged[key].acceptedQty += 1;
+                        else if (item.status === 'declined') { merged[key].declinedQty += 1; merged[key].declineReason = item.declineReason || merged[key].declineReason; }
                     });
                 });
 
                 html += `<div class="chef-order-group"><div class="chef-meal-header">${mealLabels[meal]}</div><div class="chef-order-card"><div class="chef-order-items">`;
                 const entries = Object.values(merged);
                 entries.forEach(m => {
+                    const pendingQty = m.qty - m.acceptedQty - m.declinedQty;
                     const sid = m.menuItemId || '';
                     html += `<div class="chef-order-item-row">
                         ${m.image ? `<img class="chef-order-item-img" src="${m.image}" alt="${m.name}" onerror="this.style.display='none'">` : ''}
                         <div class="chef-order-item-info">
                             <div class="name">${m.name}${m.qty > 1 ? ' x' + m.qty : ''}</div>
                             <div class="meta">¥${m.price.toFixed(2)}/份 · 共¥${(m.price * m.qty).toFixed(2)}</div>
+                            ${m.acceptedQty > 0 ? `<div style="font-size:0.75rem;color:var(--tiffany-dark);">已接 ${m.acceptedQty} 份 ✅</div>` : ''}
+                            ${m.declinedQty > 0 ? `<div style="font-size:0.75rem;color:#d63031;">已婉拒 ${m.declinedQty} 份 ✕${m.declineReason ? ' ' + m.declineReason : ''}</div>` : ''}
                         </div>
                         <div style="flex-shrink:0;text-align:right;">
-                            <div class="chef-order-actions">
-                                <button class="accept-btn" onclick="acceptItem('${sid}', '${m.name.replace(/'/g, "\\'")}', ${m.qty}, '${meal}')">接单 ✨</button>
-                                <button class="decline-btn" onclick="declineItem('${sid}', '${m.name.replace(/'/g, "\\'")}', ${m.qty}, '${meal}')">婉拒 😢</button>
-                            </div>
+                            ${pendingQty > 0 ? `<div class="chef-order-actions">
+                                <button class="accept-btn" onclick="acceptItem('${sid}', '${m.name.replace(/'/g, "\\'")}', ${pendingQty}, '${meal}')">接单 ✨</button>
+                                <button class="decline-btn" onclick="declineItem('${sid}', '${m.name.replace(/'/g, "\\'")}', ${pendingQty}, '${meal}')">婉拒 😢</button>
+                            </div>` : `<span class="chef-status-badge accepted">已处理 ✅</span>`}
                         </div>
                     </div>`;
                 });
@@ -2096,18 +2101,18 @@
             const reason = await showDeclineModal(`${name}${declineQty < qty ? ' x' + declineQty : ''}`);
             if (!reason) return;
             let remaining = declineQty;
-            orderHistory.forEach(order => {
-                if (!order.timestamp || !isToday(order.timestamp)) return;
-                if ((order.mealTime || 'dinner') !== meal) return;
-                (order.items || []).forEach(item => {
-                    if (remaining <= 0) return;
-                    if ((item.menuItemId || item.name) === (menuItemId || name) && item.status !== 'declined') {
+            for (const order of orderHistory) {
+                if (!order.timestamp || !isToday(order.timestamp)) continue;
+                if ((order.mealTime || 'dinner') !== meal) continue;
+                for (const item of (order.items || [])) {
+                    if (remaining <= 0) break;
+                    if ((item.menuItemId || item.name) === (menuItemId || name) && item.status === 'pending') {
                         item.status = 'declined';
                         item.declineReason = reason;
                         remaining--;
                     }
-                });
-            });
+                }
+            }
             saveOrders();
             const mealLabel = MEAL_LABELS[meal] || meal;
             const msg = declineQty < qty
@@ -2621,9 +2626,9 @@
                 date: new Date().toLocaleString('zh-CN'),
                 mealTime: selectedMeal,
                 status: 'pending',
-                items: items.map(([id, qty]) => {
+                items: items.flatMap(([id, qty]) => {
                     const item = menuItems.find(i => i.id === id);
-                    return { menuItemId: id, name: item.name, qty, price: item.price, image: item.image || '', status: 'pending' };
+                    return Array.from({length: qty}, () => ({ menuItemId: id, name: item.name, qty: 1, price: item.price, image: item.image || '', status: 'pending' }));
                 }),
                 total: items.reduce((sum, [id, qty]) => {
                     const item = menuItems.find(i => i.id === id);
@@ -2660,14 +2665,21 @@
                 html += `<div class="chef-order-group"><div class="chef-meal-header">${MEAL_LABELS[meal]}</div>`;
                 groups[meal].forEach(order => {
                     const display = getStatusDisplay(order);
+                    // Merge items for display
+                    const displayItems = {};
+                    order.items.forEach(item => {
+                        const k = item.menuItemId || item.name;
+                        if (!displayItems[k]) displayItems[k] = { ...item, qty: 0 };
+                        displayItems[k].qty++;
+                    });
                     html += `<div class="chef-order-card" style="cursor:pointer;" onclick="showOrderStatusById('${order.id}')">
                         <div class="chef-order-items">
-                            ${order.items.map(item => `
+                            ${Object.values(displayItems).map(item => `
                                 <div class="chef-order-item-row">
                                     ${item.image ? `<img class="chef-order-item-img" src="${item.image}" alt="${item.name}" onerror="this.style.display='none'">` : ''}
                                     <div class="chef-order-item-info">
-                                        <div class="name">${item.name}</div>
-                                        <div class="meta">x${item.qty} · ¥${item.price.toFixed(2)}</div>
+                                        <div class="name">${item.name}${item.qty > 1 ? ' x' + item.qty : ''}</div>
+                                        <div class="meta">¥${item.price.toFixed(2)}/份 · 共¥${(item.price * item.qty).toFixed(2)}</div>
                                     </div>
                                 </div>
                             `).join('')}
