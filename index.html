@@ -1595,12 +1595,11 @@
             pollTimer = setInterval(async () => {
                 if (!cloudOk) return;
 
-                // Poll orders
+                // Poll orders — only update if cloud has data
                 const cloudOrders = (await loadFromCloud('orders')).map(normalizeOrder);
-                if (cloudOrders.length !== lastOrderCount ||
+                if (cloudOrders.length > 0 &&
                     JSON.stringify(cloudOrders) !== JSON.stringify(orderHistory)) {
                     orderHistory = cloudOrders;
-                    lastOrderCount = cloudOrders.length;
                     if (currentMode === 'chef') renderChefOrders();
                     if (currentMode === 'customer' && document.getElementById('history-section').classList.contains('active')) {
                         renderHistory();
@@ -1609,10 +1608,8 @@
 
                 // Poll menu
                 const cloudMenu = (await loadFromCloud('menu_items')).map(normalizeMenuItem);
-                const menuHash = JSON.stringify(cloudMenu);
-                if (menuHash !== lastMenuHash) {
+                if (cloudMenu.length > 0 && JSON.stringify(cloudMenu) !== JSON.stringify(menuItems)) {
                     menuItems = cloudMenu;
-                    lastMenuHash = menuHash;
                     renderCategories();
                     renderMenu();
                     renderManageMenu();
@@ -1621,10 +1618,9 @@
                 // Poll notifications (only in customer mode)
                 if (currentMode === 'customer') {
                     const cloudNotifs = await loadFromCloud('notifications');
-                    if (cloudNotifs.length !== lastNotifCount) {
+                    if (cloudNotifs.length > 0 && cloudNotifs.length > notifications.length) {
                         const newNotifs = cloudNotifs.filter(n => !notifications.some(o => o.id === n.id));
                         notifications = cloudNotifs;
-                        lastNotifCount = cloudNotifs.length;
                         updateNotifyBell();
                         if (newNotifs.length > 0) showPendingNotifications();
                     }
@@ -1632,7 +1628,8 @@
 
                 // Poll requests (only in chef mode)
                 if (currentMode === 'chef') {
-                    dishRequests = await loadFromCloud('dish_requests');
+                    const cloudReqs = await loadFromCloud('dish_requests');
+                    if (cloudReqs.length > 0) dishRequests = cloudReqs;
                     updateRequestBadge();
                 }
             }, 5000);
