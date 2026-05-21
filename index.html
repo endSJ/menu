@@ -2008,6 +2008,69 @@
         const syncNowLink = document.getElementById('syncNowLink');
         syncNowLink.addEventListener('click', syncNow);
 
+        // ── Cloud diagnostic ────────────────────────────────────
+        async function runCloudDiag() {
+            let report = '🔍 云端诊断报告\n' + '─'.repeat(30) + '\n';
+            report += 'URL: ' + SB_URL + '\n';
+            report += 'Key(前20): ' + SB_KEY.substring(0, 20) + '...\n\n';
+
+            // Test 1: Basic connectivity
+            try {
+                const r1 = await fetch(`${SB_URL}/orders?select=id&limit=1`, { headers: SB_HEADERS });
+                report += '① 连接测试: HTTP ' + r1.status + (r1.ok ? ' ✅' : ' ❌') + '\n';
+            } catch (e) {
+                report += '① 连接测试: ' + e.message + ' ❌\n';
+            }
+
+            // Test 2: Write test record
+            const testId = 'diag-' + Date.now();
+            const testPayload = { id: testId, data: { test: true, time: new Date().toISOString() } };
+            try {
+                const r2 = await fetch(`${SB_URL}/menu_items`, {
+                    method: 'POST',
+                    headers: { ...SB_HEADERS, Prefer: 'resolution=merge-duplicates' },
+                    body: JSON.stringify(testPayload)
+                });
+                report += '② 写入测试: HTTP ' + r2.status + (r2.ok ? ' ✅' : ' ❌') + '\n';
+                if (!r2.ok) {
+                    const errText = await r2.text().catch(() => '');
+                    report += '   错误详情: ' + (errText || '(空)').substring(0, 200) + '\n';
+                }
+            } catch (e) {
+                report += '② 写入测试: ' + e.message + ' ❌\n';
+            }
+
+            // Test 3: Read back
+            try {
+                const r3 = await fetch(`${SB_URL}/menu_items?select=*&id=eq.${testId}`, { headers: SB_HEADERS });
+                const rows = await r3.json();
+                report += '③ 读取测试: HTTP ' + r3.status + ', 行数=' + rows.length + (rows.length > 0 ? ' ✅' : ' ❌') + '\n';
+            } catch (e) {
+                report += '③ 读取测试: ' + e.message + ' ❌\n';
+            }
+
+            // Test 4: Delete test
+            try {
+                const r4 = await fetch(`${SB_URL}/menu_items?id=eq.${testId}`, { method: 'DELETE', headers: SB_HEADERS });
+                report += '④ 删除测试: HTTP ' + r4.status + (r4.ok ? ' ✅' : ' ❌') + '\n';
+            } catch (e) {
+                report += '④ 删除测试: ' + e.message + ' ❌\n';
+            }
+
+            // Test 5: Read all menu count
+            try {
+                const r5 = await fetch(`${SB_URL}/menu_items?select=id`, { headers: SB_HEADERS });
+                const rows = await r5.json();
+                report += '\n📊 云端菜单数: ' + rows.length + ' 条';
+            } catch (e) {
+                report += '\n📊 无法读取菜单数';
+            }
+
+            alert(report);
+        }
+        // Expose for console: type runCloudDiag() in F12
+        window.runCloudDiag = runCloudDiag;
+
         // Switch mode link
         switchModeLink.addEventListener('click', () => {
             showConfirm('确定要切换身份吗？', '🔄', '切换身份').then(confirmed => {
