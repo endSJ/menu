@@ -1311,6 +1311,7 @@
         <h1>宝贝点餐台 💕</h1>
         <p id="headerSubtitle">想吃什么，我都给你做~ <span class="notify-bell" id="notifyBell" style="display:none;" title="新消息">🔔</span></p>
         <div class="switch-mode-link" id="switchModeLink">🔄 切换身份</div>
+        <div class="switch-mode-link" id="reloginLink" style="margin-left:12px;">🔁 换个身份</div>
         <div class="switch-mode-link" id="syncNowLink" style="margin-left:12px;">☁️ 同步</div>
     </header>
 
@@ -1852,6 +1853,7 @@
         function setMode(mode) {
             currentMode = mode;
             safeSetRaw('currentMode', mode);
+            safeSetRaw('savedMode', mode);
 
             // Update header
             if (mode === 'customer') {
@@ -2070,14 +2072,19 @@
         document.querySelectorAll('.login-option').forEach(option => {
             option.addEventListener('click', () => {
                 const mode = option.dataset.login;
-                loginOverlay.classList.add('hidden');
-                setMode(mode);
-                if (mode === 'customer') {
-                    renderCategories();
-                    renderOrderPanel();
-                }
+                safeSetRaw('savedMode', mode);
+                enterApp(mode);
             });
         });
+
+        function enterApp(mode) {
+            loginOverlay.classList.add('hidden');
+            setMode(mode);
+            if (mode === 'customer') {
+                renderCategories();
+                renderOrderPanel();
+            }
+        }
 
         // Sync now link
         const syncNowLink = document.getElementById('syncNowLink');
@@ -2145,6 +2152,13 @@
         }
         // Expose for console: type runCloudDiag() in F12
         window.runCloudDiag = runCloudDiag;
+
+        // Re-login link
+        const reloginLink = document.getElementById('reloginLink');
+        reloginLink.addEventListener('click', () => {
+            localStorage.removeItem('savedMode');
+            loginOverlay.classList.remove('hidden');
+        });
 
         // Switch mode link
         switchModeLink.addEventListener('click', () => {
@@ -2901,8 +2915,13 @@
             setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
-        // Initial Render — show login immediately, cloud sync in background
-        loginOverlay.classList.remove('hidden');
+        // Initial Render — skip login if role remembered
+        const savedRole = localStorage.getItem('savedMode');
+        if (savedRole) {
+            enterApp(savedRole);
+        } else {
+            loginOverlay.classList.remove('hidden');
+        }
 
         async function boot() {
             console.log('🚀 启动中...');
