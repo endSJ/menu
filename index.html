@@ -1464,31 +1464,53 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script>
         // ── Supabase Cloud Sync ──────────────────────────────────
+        // ※ Supabase SDK 通过动态加载，失败也不影响页面
         const SUPABASE_URL = 'https://ajwtywxhqronkyjooisb.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_XwDn9rj4K9EhEnvSX2mXwW_wddFqgbV';
-
         let supabase = null;
-        try {
-            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        } catch (e) {
-            console.warn('Supabase init failed, using local mode:', e.message);
-        }
+        let cloudOk = false;
 
-        // Local state
+        (function loadSupabaseSDK() {
+            const script = document.createElement('script');
+            script.src = 'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+            script.onload = function () {
+                try {
+                    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                    cloudOk = true;
+                    console.log('Supabase ready');
+                } catch (e) {
+                    console.warn('Supabase init failed:', e.message);
+                }
+            };
+            script.onerror = function () {
+                console.warn('Supabase CDN unavailable, local mode only');
+            };
+            document.head.appendChild(script);
+        })();
+
+        // Local state — always load from localStorage first (instant)
         const STORAGE_LIMIT = 4 * 1024 * 1024;
         const MAX_IMAGE_SIZE = 512 * 1024;
 
-        let menuItems = JSON.parse(localStorage.getItem('menuItems')) || [];
-        let orderHistory = JSON.parse(localStorage.getItem('orderHistory')) || [];
-        let cart = JSON.parse(localStorage.getItem('cart')) || {};
-        let dishRequests = JSON.parse(localStorage.getItem('dishRequests')) || [];
-        let notifications = JSON.parse(localStorage.getItem('notifications')) || [];
-        let currentMode = localStorage.getItem('currentMode') || 'customer';
+        let menuItems = [];
+        let orderHistory = [];
+        let cart = {};
+        let dishRequests = [];
+        let notifications = [];
+        let currentMode = 'customer';
         let selectedMeal = 'breakfast';
         let selectedImage = null;
+
+        (function loadLocalState() {
+            try { menuItems = JSON.parse(localStorage.getItem('menuItems')) || []; } catch (e) {}
+            try { orderHistory = JSON.parse(localStorage.getItem('orderHistory')) || []; } catch (e) {}
+            try { cart = JSON.parse(localStorage.getItem('cart')) || {}; } catch (e) {}
+            try { dishRequests = JSON.parse(localStorage.getItem('dishRequests')) || []; } catch (e) {}
+            try { notifications = JSON.parse(localStorage.getItem('notifications')) || []; } catch (e) {}
+            currentMode = localStorage.getItem('currentMode') || 'customer';
+        })();
 
         function generateId() {
             return Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 8);
@@ -1501,28 +1523,26 @@
         // ── Cloud data helpers ───────────────────────────────────
 
         async function loadFromCloud(table) {
-            if (!supabase) return [];
+            if (!cloudOk) return [];
             try {
                 const { data, error } = await supabase.from(table).select('data');
-                if (error) { console.warn('Supabase load:', table, error); return []; }
+                if (error) { console.warn('Supabase load:', error); return []; }
                 return (data || []).map(row => row.data);
-            } catch (e) { console.warn('Supabase load error:', table, e); return []; }
+            } catch (e) { console.warn('Supabase load error:', e); return []; }
         }
 
         async function saveToCloud(table, id, payload) {
-            if (!supabase) return;
+            if (!cloudOk) return;
             try {
-                const { error } = await supabase.from(table).upsert({ id: String(id), data: payload }, { onConflict: 'id' });
-                if (error) console.warn('Supabase save:', table, error);
-            } catch (e) { console.warn('Supabase save error:', table, e); }
+                await supabase.from(table).upsert({ id: String(id), data: payload }, { onConflict: 'id' });
+            } catch (e) { /* silent */ }
         }
 
         async function deleteFromCloud(table, id) {
-            if (!supabase) return;
+            if (!cloudOk) return;
             try {
-                const { error } = await supabase.from(table).delete().eq('id', String(id));
-                if (error) console.warn('Supabase delete:', table, error);
-            } catch (e) { console.warn('Supabase delete error:', table, e); }
+                await supabase.from(table).delete().eq('id', String(id));
+            } catch (e) { /* silent */ }
         }
 
         // ── Normalize helpers ────────────────────────────────────
@@ -1569,7 +1589,7 @@
         // ── Realtime subscriptions ───────────────────────────────
 
         function setupRealtime() {
-            if (!supabase) return;
+            if (!cloudOk) return;
             supabase.channel('orders-changes')
                 .on('postgres_changes',
                     { event: '*', schema: 'public', table: 'orders' },
@@ -2573,11 +2593,16 @@
             setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
-        // Initial Render — load cloud data, then wait for login
+        // Initial Render — show login immediately, cloud sync in background
+        loginOverlay.classList.remove('hidden');
+
         async function boot() {
-            await initData();
-            setupRealtime();
-            loginOverlay.classList.remove('hidden');
+            try {
+                await initData();
+                setupRealtime();
+            } catch (e) {
+                console.warn('Boot error:', e.message);
+            }
         }
         boot();
     </script>
