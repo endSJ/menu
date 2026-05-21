@@ -1527,7 +1527,7 @@
                 }
                 const rows = await res.json();
                 return (rows || []).map(r => r.data);
-            } catch (e) { cloudOk = false; return []; }
+            } catch (e) { return []; }  // transient error, don't disable cloud
         }
 
         async function saveToCloud(table, id, payload) {
@@ -1544,7 +1544,7 @@
                     console.warn('Save failed:', table, id, res.status);
                     if (res.status === 401 || res.status === 403) cloudOk = false;
                 }
-            } catch (e) { console.warn('Save error:', table, id, e.message); cloudOk = false; }
+            } catch (e) { console.warn('Save error:', table, id, e.message); }
         }
 
         async function deleteFromCloud(table, id) {
@@ -1646,7 +1646,9 @@
         function setupPolling() {
             clearInterval(pollTimer);
             pollTimer = setInterval(async () => {
-                if (!cloudOk || !(await checkCloud())) return;
+                // Recover from transient failures
+                if (!cloudOk) await checkCloud();
+                if (!cloudOk) return;
 
                 // Poll orders
                 const cloudOrders = (await loadFromCloud('orders')).map(normalizeOrder);
@@ -1663,6 +1665,7 @@
                 const cloudMenu = (await loadFromCloud('menu_items')).map(normalizeMenuItem);
                 if (cloudMenu.length > 0 && JSON.stringify(cloudMenu) !== JSON.stringify(menuItems)) {
                     menuItems = cloudMenu;
+                    safeSet('menuItems', menuItems);
                     renderCategories();
                     renderMenu();
                     renderManageMenu();
@@ -1695,6 +1698,7 @@
 
         async function saveMenuItems() {
             safeSet('menuItems', menuItems);
+            if (cloudOk) console.log('☁️ 保存菜单到云端: ' + menuItems.length + ' 条');
             await Promise.all(menuItems.map(item => saveToCloud('menu_items', item.id, item)));
         }
 
@@ -1705,21 +1709,25 @@
 
         async function saveOrders() {
             safeSet('orderHistory', orderHistory);
+            if (cloudOk) console.log('☁️ 保存订单到云端: ' + orderHistory.length + ' 条');
             await Promise.all(orderHistory.map(o => saveToCloud('orders', o.id, o)));
         }
 
         async function saveRequests() {
             safeSet('dishRequests', dishRequests);
+            if (cloudOk) console.log('☁️ 保存请求到云端: ' + dishRequests.length + ' 条');
             await Promise.all(dishRequests.map(r => saveToCloud('dish_requests', r.id, r)));
         }
 
         async function saveRequest(req) {
+            if (cloudOk) console.log('☁️ 保存请求: ' + req.name);
             await saveToCloud('dish_requests', req.id, req);
             safeSet('dishRequests', dishRequests);
         }
 
         async function saveNotifications() {
             safeSet('notifications', notifications);
+            if (cloudOk) console.log('☁️ 保存通知: ' + notifications.length + ' 条');
             await Promise.all(notifications.map(n => saveToCloud('notifications', n.id, n)));
         }
 
