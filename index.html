@@ -1685,17 +1685,20 @@
         let lastMenuHash = '';
         let lastNotifCount = 0;
 
+        let pollCount = 0;
         function setupPolling() {
             clearInterval(pollTimer);
+            console.log('🔄 轮询已启动 (每5秒)');
             pollTimer = setInterval(async () => {
+                pollCount++;
                 // Recover from transient failures
-                if (!cloudOk) await checkCloud();
-                if (!cloudOk) return;
+                if (!cloudOk) { console.log('🔄 轮询#' + pollCount + ' 尝试重连...'); await checkCloud(); }
+                if (!cloudOk) { console.warn('🔄 轮询#' + pollCount + ' cloudOk=false, 跳过'); return; }
 
                 // Poll orders
                 const cloudOrders = (await loadFromCloud('orders')).map(normalizeOrder);
-                if (cloudOrders.length > 0 &&
-                    JSON.stringify(cloudOrders) !== JSON.stringify(orderHistory)) {
+                if (cloudOrders.length > 0 && JSON.stringify(cloudOrders) !== JSON.stringify(orderHistory)) {
+                    console.log('🔄#' + pollCount + ' 订单更新 ' + cloudOrders.length + '条');
                     orderHistory = cloudOrders;
                     if (currentMode === 'chef') renderChefOrders();
                     if (currentMode === 'customer' && document.getElementById('history-section').classList.contains('active')) {
@@ -1706,6 +1709,7 @@
                 // Poll menu — cloud is truth, overwrite local completely
                 const cloudMenu = (await loadFromCloud('menu_items')).map(normalizeMenuItem);
                 if (cloudMenu.length > 0 && JSON.stringify(cloudMenu) !== JSON.stringify(menuItems)) {
+                    console.log('🔄#' + pollCount + ' 菜单更新 云端' + cloudMenu.length + ' vs 本地' + menuItems.length);
                     menuItems = cloudMenu;
                     safeSet('menuItems', menuItems);
                     // Remove cloud-deleted items from cart too
