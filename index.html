@@ -1975,12 +1975,13 @@
         function showPendingNotifications() {
             const unread = notifications.filter(n => !n.read);
             if (unread.length === 0) return;
-            // Show most recent unread notification
             const latest = unread[0];
-            // Find the related order and show its status
-            const order = orderHistory.find(o => o.id === latest.orderId);
-            if (order) {
-                showOrderStatus(order);
+            // Show order status or generic notification message
+            if (latest.orderId) {
+                const order = orderHistory.find(o => o.id === latest.orderId);
+                if (order) showOrderStatus(order);
+            } else {
+                showToast(latest.message);
             }
             // Mark all as read
             notifications.forEach(n => n.read = true);
@@ -2185,7 +2186,7 @@
                     <div class="request-actions">
                         ${req.fulfilled ? '<span style="font-size:0.85rem;color:var(--tiffany-dark);">已上架</span>' : `
                             <button class="fulfill-btn" onclick="fulfillRequest('${req.id}')">我来做 👨‍🍳</button>
-                            <button class="dismiss-btn" onclick="dismissRequest('${req.id}')">忽略</button>
+                            <button class="dismiss-btn" onclick="dismissRequest('${req.id}')">婉拒</button>
                         `}
                     </div>
                 </div>
@@ -2219,15 +2220,25 @@
             }
         }
 
-        function dismissRequest(requestId) {
-            showConfirm('确定要忽略这个请求吗？宝贝会伤心的~', '😢', '狠心忽略').then(confirmed => {
-                if (confirmed) {
-                    dishRequests = dishRequests.filter(r => r.id !== requestId);
-                    deleteFromCloud('dish_requests', requestId);
-                    renderRequests();
-                    showToast('请求已忽略');
-                }
+        async function dismissRequest(requestId) {
+            const req = dishRequests.find(r => r.id === requestId);
+            if (!req) return;
+            const reason = await showDeclineModal(req.name);
+            if (!reason) return; // cancelled
+            dishRequests = dishRequests.filter(r => r.id !== requestId);
+            deleteFromCloud('dish_requests', requestId);
+            // Notify girlfriend
+            notifications.unshift({
+                id: generateId(),
+                orderId: null,
+                type: 'request_declined',
+                message: `男友婉拒了新菜请求「${req.name}」：${reason} 😢`,
+                date: new Date().toLocaleString('zh-CN'),
+                read: false
             });
+            saveNotifications();
+            renderRequests();
+            showToast('已婉拒，宝贝会收到通知');
         }
 
         // Render manage menu (chef only, always shows delete)
@@ -2630,7 +2641,20 @@
             // If adding from a dish request, mark it fulfilled
             if (fulfillingRequestId) {
                 const req = dishRequests.find(r => r.id === fulfillingRequestId);
-                if (req) { req.fulfilled = true; saveRequests(); }
+                if (req) {
+                    req.fulfilled = true;
+                    saveRequests();
+                    // Notify girlfriend
+                    notifications.unshift({
+                        id: generateId(),
+                        orderId: null,
+                        type: 'request_fulfilled',
+                        message: `男友已上架你想要的「${req.name}」啦，快去点单吧~ 🎉`,
+                        date: new Date().toLocaleString('zh-CN'),
+                        read: false
+                    });
+                    saveNotifications();
+                }
                 fulfillingRequestId = null;
             }
 
