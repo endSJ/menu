@@ -1310,7 +1310,7 @@
 
     <header>
         <h1>宝贝点餐台 💕</h1>
-        <p id="headerSubtitle">想吃什么，我都给你做~ <span class="notify-bell" id="notifyBell" style="display:none;position:relative;" title="新消息">🔔</span>
+        <p id="headerSubtitle">想吃什么，我都给你做~ <span class="notify-bell" id="notifyBell" style="position:relative;display:none;" title="新消息">🔔</span>
             <div class="request-dropdown" id="notifyPanel" style="display:none; position:absolute; right:20px; top:100%; z-index:25; min-width:320px; max-height:360px; overflow-y:auto; text-align:left; padding:16px; margin-top:4px;">
                 <div id="notifyPanelContent"></div>
             </div>
@@ -2010,16 +2010,16 @@
         }
 
         function updateNotifyBell() {
+            if (currentMode !== 'customer') { notifyBell.style.display = 'none'; return; }
+            notifyBell.style.display = '';
             const unread = notifications.filter(n => !n.read).length;
             const hasImportant = notifications.some(n => !n.read && n.important);
-            if (currentMode === 'customer' && unread > 0) {
-                notifyBell.style.display = '';
+            if (unread > 0) {
                 notifyBell.classList.add('has-notify');
                 notifyBell.textContent = hasImportant ? '🚨' : '🔔';
             } else {
                 notifyBell.classList.remove('has-notify');
                 notifyBell.textContent = '🔔';
-                notifyBell.style.display = currentMode === 'customer' ? '' : 'none';
             }
         }
 
