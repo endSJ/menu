@@ -2580,7 +2580,8 @@
                             ${isToday(order.timestamp) ? `<div style="display:flex;align-items:center;gap:4px;font-size:0.8rem;">
                                 <span>${display.icon}</span>
                                 <span style="color:${order.status === 'declined' ? '#d63031' : order.status === 'accepted' ? 'var(--tiffany-dark)' : 'var(--text-light)'};">${display.label}</span>
-                            </div>` : ''}
+                            </div>
+                            ${order.status === 'declined' && order.declineReason ? `<div style="font-size:0.75rem;color:var(--text-light);margin-top:2px;max-width:120px;text-align:right;">${order.declineReason}</div>` : ''}` : ''}
                             ${showActions ? `<div class="chef-order-actions" style="margin-top:4px;" onclick="event.stopPropagation();">
                                 <button class="reorder-btn" onclick="reorder('${order.id}')" style="padding:6px 14px;font-size:0.8rem;">再来一单</button>
                                 <button class="delete-btn" onclick="deleteOrder('${order.id}')" style="padding:6px 14px;font-size:0.8rem;">删除</button>
@@ -2597,6 +2598,17 @@
         function renderHistory() {
             const todayOrders = orderHistory.filter(o => o.timestamp && isToday(o.timestamp));
             renderOrderGroup(todayOrders, historyList, true);
+            // Update tab badge with cute status counts
+            const accepted = todayOrders.filter(o => o.status === 'accepted').length;
+            const declined = todayOrders.filter(o => o.status === 'declined').length;
+            let label = '今日订单 💌';
+            if (accepted > 0 || declined > 0) {
+                const parts = [];
+                if (accepted > 0) parts.push('🔥' + accepted);
+                if (declined > 0) parts.push('😢' + declined);
+                label += ' ' + parts.join('·');
+            }
+            historyTabBtn.textContent = label;
         }
 
         // Render 1-7 days old orders (历史订单)
