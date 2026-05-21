@@ -1464,37 +1464,25 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script>
-        // Data Storage
-        const STORAGE_LIMIT = 4 * 1024 * 1024; // 4MB alert threshold
-        const MAX_IMAGE_SIZE = 512 * 1024; // 512KB max per image
-        let menuItems = JSON.parse(localStorage.getItem('menuItems')) || [];
-        let orderHistory = JSON.parse(localStorage.getItem('orderHistory')) || [];
+        // ── Supabase Cloud Sync ──────────────────────────────────
+        const SUPABASE_URL = 'https://ajwtywxhqronkyjooisb.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_XwDn9rj4K9EhEnvSX2mXwW_wddFqgbV';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // Local state
+        const STORAGE_LIMIT = 4 * 1024 * 1024;
+        const MAX_IMAGE_SIZE = 512 * 1024;
+
+        let menuItems = [];
+        let orderHistory = [];
         let cart = JSON.parse(localStorage.getItem('cart')) || {};
-        let dishRequests = JSON.parse(localStorage.getItem('dishRequests')) || [];
-        let notifications = JSON.parse(localStorage.getItem('notifications')) || [];
+        let dishRequests = [];
+        let notifications = [];
         let currentMode = localStorage.getItem('currentMode') || 'customer';
         let selectedMeal = 'breakfast';
         let selectedImage = null;
-
-        // Normalize all IDs to strings for backward compatibility
-        menuItems = menuItems.map(item => ({
-            ...item,
-            id: String(item.id),
-            // Migrate old single mealTime to new mealTimes array
-            mealTimes: item.mealTimes || (item.mealTime ? [item.mealTime] : ['breakfast', 'lunch', 'dinner'])
-        }));
-        orderHistory = orderHistory.map(order => ({
-            ...order,
-            id: String(order.id),
-            items: order.items.map(item => ({ ...item, menuItemId: item.menuItemId ? String(item.menuItemId) : undefined }))
-        }));
-        // Normalize cart keys to strings (already strings, but ensure consistency)
-        const normalizedCart = {};
-        for (const [key, val] of Object.entries(cart)) {
-            normalizedCart[String(key)] = val;
-        }
-        cart = normalizedCart;
 
         function generateId() {
             return Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 8);
@@ -1504,15 +1492,152 @@
             localStorage.setItem('cart', JSON.stringify(cart));
         }
 
-        function checkStorageSize() {
-            let total = new Blob([JSON.stringify(menuItems)]).size;
-            total += new Blob([JSON.stringify(orderHistory)]).size;
-            total += new Blob([JSON.stringify(cart)]).size;
-            return total;
+        // ── Cloud data helpers ───────────────────────────────────
+
+        async function loadFromCloud(table) {
+            const { data, error } = await supabase.from(table).select('data');
+            if (error) { console.warn('Supabase load:', table, error); return []; }
+            return (data || []).map(row => row.data);
         }
 
-        // Default menu items
-        // Initialize — start with empty menu, chef adds dishes manually
+        async function saveToCloud(table, id, payload) {
+            const { error } = await supabase.from(table).upsert({ id: String(id), data: payload }, { onConflict: 'id' });
+            if (error) console.warn('Supabase save:', table, error);
+        }
+
+        async function deleteFromCloud(table, id) {
+            const { error } = await supabase.from(table).delete().eq('id', String(id));
+            if (error) console.warn('Supabase delete:', table, error);
+        }
+
+        // ── Normalize helpers ────────────────────────────────────
+
+        function normalizeMenuItem(item) {
+            return {
+                ...item,
+                id: String(item.id),
+                mealTimes: item.mealTimes || (item.mealTime ? [item.mealTime] : ['breakfast', 'lunch', 'dinner'])
+            };
+        }
+
+        function normalizeOrder(order) {
+            return {
+                ...order,
+                id: String(order.id),
+                items: (order.items || []).map(item => ({
+                    ...item,
+                    menuItemId: item.menuItemId ? String(item.menuItemId) : undefined
+                }))
+            };
+        }
+
+        // ── Init: cloud first, local fallback ────────────────────
+
+        async function initData() {
+            const [cloudMenu, cloudOrders, cloudRequests, cloudNotifs] = await Promise.all([
+                loadFromCloud('menu_items'),
+                loadFromCloud('orders'),
+                loadFromCloud('dish_requests'),
+                loadFromCloud('notifications')
+            ]);
+
+            menuItems = cloudMenu.length ? cloudMenu.map(normalizeMenuItem)
+                : (JSON.parse(localStorage.getItem('menuItems')) || []).map(normalizeMenuItem);
+            orderHistory = cloudOrders.length ? cloudOrders.map(normalizeOrder)
+                : (JSON.parse(localStorage.getItem('orderHistory')) || []).map(normalizeOrder);
+            dishRequests = cloudRequests.length ? cloudRequests
+                : JSON.parse(localStorage.getItem('dishRequests')) || [];
+            notifications = cloudNotifs.length ? cloudNotifs
+                : JSON.parse(localStorage.getItem('notifications')) || [];
+
+            const nc = {};
+            for (const [k, v] of Object.entries(cart)) nc[String(k)] = v;
+            cart = nc;
+        }
+
+        // ── Realtime subscriptions ───────────────────────────────
+
+        function setupRealtime() {
+            supabase.channel('orders-changes')
+                .on('postgres_changes',
+                    { event: '*', schema: 'public', table: 'orders' },
+                    async () => {
+                        orderHistory = (await loadFromCloud('orders')).map(normalizeOrder);
+                        if (currentMode === 'chef') renderChefOrders();
+                        if (currentMode === 'customer' && document.getElementById('history-section').classList.contains('active')) {
+                            renderHistory();
+                        }
+                    })
+                .subscribe();
+
+            supabase.channel('menu-changes')
+                .on('postgres_changes',
+                    { event: '*', schema: 'public', table: 'menu_items' },
+                    async () => {
+                        menuItems = (await loadFromCloud('menu_items')).map(normalizeMenuItem);
+                        renderCategories();
+                        renderMenu();
+                        renderManageMenu();
+                    })
+                .subscribe();
+
+            supabase.channel('requests-changes')
+                .on('postgres_changes',
+                    { event: '*', schema: 'public', table: 'dish_requests' },
+                    async () => {
+                        dishRequests = await loadFromCloud('dish_requests');
+                        updateRequestBadge();
+                        if (document.getElementById('requests-section').classList.contains('active')) renderRequests();
+                    })
+                .subscribe();
+
+            supabase.channel('notifs-changes')
+                .on('postgres_changes',
+                    { event: 'INSERT', schema: 'public', table: 'notifications' },
+                    async () => {
+                        notifications = await loadFromCloud('notifications');
+                        updateNotifyBell();
+                        if (currentMode === 'customer') showPendingNotifications();
+                    })
+                .subscribe();
+        }
+
+        // ── Save wrappers (cloud + local) ───────────────────────
+
+        async function saveMenuItems() {
+            localStorage.setItem('menuItems', JSON.stringify(menuItems));
+            await Promise.all(menuItems.map(item => saveToCloud('menu_items', item.id, item)));
+        }
+
+        async function deleteMenuItemCloud(id) {
+            await deleteFromCloud('menu_items', id);
+            localStorage.setItem('menuItems', JSON.stringify(menuItems));
+        }
+
+        async function saveOrders() {
+            localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+            await Promise.all(orderHistory.map(o => saveToCloud('orders', o.id, o)));
+        }
+
+        async function saveRequests() {
+            localStorage.setItem('dishRequests', JSON.stringify(dishRequests));
+            await Promise.all(dishRequests.map(r => saveToCloud('dish_requests', r.id, r)));
+        }
+
+        async function saveRequest(req) {
+            await saveToCloud('dish_requests', req.id, req);
+            localStorage.setItem('dishRequests', JSON.stringify(dishRequests));
+        }
+
+        async function saveNotifications() {
+            localStorage.setItem('notifications', JSON.stringify(notifications));
+            await Promise.all(notifications.map(n => saveToCloud('notifications', n.id, n)));
+        }
+
+        function checkStorageSize() {
+            return new Blob([JSON.stringify(menuItems)]).size +
+                   new Blob([JSON.stringify(orderHistory)]).size;
+        }
 
         // DOM Elements
         const menuGrid = document.getElementById('menuGrid');
@@ -1708,7 +1833,7 @@
                 date: new Date().toLocaleString('zh-CN'),
                 read: false
             });
-            localStorage.setItem('notifications', JSON.stringify(notifications));
+            saveNotification(notifications[0]);
             updateNotifyBell();
         }
 
@@ -1735,7 +1860,7 @@
             }
             // Mark all as read
             notifications.forEach(n => n.read = true);
-            localStorage.setItem('notifications', JSON.stringify(notifications));
+            saveNotifications();
             updateNotifyBell();
         }
 
@@ -1752,7 +1877,7 @@
             const order = orderHistory.find(o => o.id === orderId);
             if (!order) return;
             order.status = 'accepted';
-            localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+            saveOrders();
             addNotification(orderId, 'accepted', `男友接单啦~ ${order.items[0]?.name || ''}等${order.items.length}个菜马上做！✨`);
             renderChefOrders();
             showToast('已接单，宝贝会收到通知~ ✨');
@@ -1765,7 +1890,7 @@
             if (!reason) return;
             order.status = 'declined';
             order.declineReason = reason;
-            localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+            saveOrders();
             addNotification(orderId, 'declined', `男友说「${order.items[0]?.name || '这个'}」做不了：${reason} 😢\n等宝贝下次再点~`);
             renderChefOrders();
             showToast('已婉拒，宝贝会收到通知');
@@ -1844,7 +1969,7 @@
                 date: new Date().toLocaleString('zh-CN'),
                 fulfilled: false
             });
-            localStorage.setItem('dishRequests', JSON.stringify(dishRequests));
+            saveRequest(dishRequests[dishRequests.length - 1]);
             customerRequestInput.value = '';
             closeRequestDropdown();
             showToast('已告诉男友啦，等他学会了就上架~ 💕');
@@ -1898,7 +2023,7 @@
                 document.getElementById('add-section').classList.add('active');
                 // Mark as fulfilled
                 req.fulfilled = true;
-                localStorage.setItem('dishRequests', JSON.stringify(dishRequests));
+                saveRequests();
                 renderRequests();
                 showToast('已跳转到添加页面，请填写详细信息~');
             }
@@ -1908,7 +2033,8 @@
             showConfirm('确定要忽略这个请求吗？宝贝会伤心的~', '😢', '狠心忽略').then(confirmed => {
                 if (confirmed) {
                     dishRequests = dishRequests.filter(r => r.id !== requestId);
-                    localStorage.setItem('dishRequests', JSON.stringify(dishRequests));
+                    saveRequests();
+                    deleteRequestCloud(requestId);
                     renderRequests();
                     showToast('请求已忽略');
                 }
@@ -2112,7 +2238,7 @@
             };
 
             orderHistory.unshift(order);
-            localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+            saveOrders();
             cart = {};
             saveCart();
             renderMenu();
@@ -2209,7 +2335,8 @@
         // Delete Order
         function deleteOrder(orderId) {
             orderHistory = orderHistory.filter(o => String(o.id) !== orderId);
-            localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+            saveOrders();
+            deleteFromCloud('orders', orderId);
             renderHistory();
             showToast('订单已删除');
         }
@@ -2413,6 +2540,7 @@
                 delete cart[id];
                 saveCart();
                 saveMenuItems();
+                deleteMenuItemCloud(id);
                 renderCategories();
                 renderMenu();
                 renderOrderPanel();
@@ -2433,8 +2561,13 @@
             setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
-        // Initial Render — wait for login selection
-        loginOverlay.classList.remove('hidden');
+        // Initial Render — load cloud data, then wait for login
+        async function boot() {
+            await initData();
+            setupRealtime();
+            loginOverlay.classList.remove('hidden');
+        }
+        boot();
     </script>
 </body>
 </html>
