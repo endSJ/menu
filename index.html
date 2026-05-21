@@ -1469,17 +1469,23 @@
         // ── Supabase Cloud Sync ──────────────────────────────────
         const SUPABASE_URL = 'https://ajwtywxhqronkyjooisb.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_XwDn9rj4K9EhEnvSX2mXwW_wddFqgbV';
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let supabase = null;
+        try {
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        } catch (e) {
+            console.warn('Supabase init failed, using local mode:', e.message);
+        }
 
         // Local state
         const STORAGE_LIMIT = 4 * 1024 * 1024;
         const MAX_IMAGE_SIZE = 512 * 1024;
 
-        let menuItems = [];
-        let orderHistory = [];
+        let menuItems = JSON.parse(localStorage.getItem('menuItems')) || [];
+        let orderHistory = JSON.parse(localStorage.getItem('orderHistory')) || [];
         let cart = JSON.parse(localStorage.getItem('cart')) || {};
-        let dishRequests = [];
-        let notifications = [];
+        let dishRequests = JSON.parse(localStorage.getItem('dishRequests')) || [];
+        let notifications = JSON.parse(localStorage.getItem('notifications')) || [];
         let currentMode = localStorage.getItem('currentMode') || 'customer';
         let selectedMeal = 'breakfast';
         let selectedImage = null;
@@ -1495,19 +1501,28 @@
         // ── Cloud data helpers ───────────────────────────────────
 
         async function loadFromCloud(table) {
-            const { data, error } = await supabase.from(table).select('data');
-            if (error) { console.warn('Supabase load:', table, error); return []; }
-            return (data || []).map(row => row.data);
+            if (!supabase) return [];
+            try {
+                const { data, error } = await supabase.from(table).select('data');
+                if (error) { console.warn('Supabase load:', table, error); return []; }
+                return (data || []).map(row => row.data);
+            } catch (e) { console.warn('Supabase load error:', table, e); return []; }
         }
 
         async function saveToCloud(table, id, payload) {
-            const { error } = await supabase.from(table).upsert({ id: String(id), data: payload }, { onConflict: 'id' });
-            if (error) console.warn('Supabase save:', table, error);
+            if (!supabase) return;
+            try {
+                const { error } = await supabase.from(table).upsert({ id: String(id), data: payload }, { onConflict: 'id' });
+                if (error) console.warn('Supabase save:', table, error);
+            } catch (e) { console.warn('Supabase save error:', table, e); }
         }
 
         async function deleteFromCloud(table, id) {
-            const { error } = await supabase.from(table).delete().eq('id', String(id));
-            if (error) console.warn('Supabase delete:', table, error);
+            if (!supabase) return;
+            try {
+                const { error } = await supabase.from(table).delete().eq('id', String(id));
+                if (error) console.warn('Supabase delete:', table, error);
+            } catch (e) { console.warn('Supabase delete error:', table, e); }
         }
 
         // ── Normalize helpers ────────────────────────────────────
@@ -1541,14 +1556,10 @@
                 loadFromCloud('notifications')
             ]);
 
-            menuItems = cloudMenu.length ? cloudMenu.map(normalizeMenuItem)
-                : (JSON.parse(localStorage.getItem('menuItems')) || []).map(normalizeMenuItem);
-            orderHistory = cloudOrders.length ? cloudOrders.map(normalizeOrder)
-                : (JSON.parse(localStorage.getItem('orderHistory')) || []).map(normalizeOrder);
-            dishRequests = cloudRequests.length ? cloudRequests
-                : JSON.parse(localStorage.getItem('dishRequests')) || [];
-            notifications = cloudNotifs.length ? cloudNotifs
-                : JSON.parse(localStorage.getItem('notifications')) || [];
+            menuItems = (cloudMenu.length ? cloudMenu : menuItems).map(normalizeMenuItem);
+            orderHistory = (cloudOrders.length ? cloudOrders : orderHistory).map(normalizeOrder);
+            dishRequests = cloudRequests.length ? cloudRequests : dishRequests;
+            notifications = cloudNotifs.length ? cloudNotifs : notifications;
 
             const nc = {};
             for (const [k, v] of Object.entries(cart)) nc[String(k)] = v;
@@ -1558,6 +1569,7 @@
         // ── Realtime subscriptions ───────────────────────────────
 
         function setupRealtime() {
+            if (!supabase) return;
             supabase.channel('orders-changes')
                 .on('postgres_changes',
                     { event: '*', schema: 'public', table: 'orders' },
