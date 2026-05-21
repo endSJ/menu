@@ -2949,7 +2949,7 @@
             if (affectedOrders.length > 0) {
                 const orderNames = affectedOrders.map(o => {
                     const ts = new Date(o.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-                    return `${MEAL_LABELS[o.mealTime] || ''} ${ts}`;
+                    return `${MEAL_LABELS[o.mealTime] || ''} 今日下单时间${ts}`;
                 }).join('、');
                 msg += `\n⚠️ 今日有 ${affectedOrders.length} 笔订单包含此菜品（${orderNames}），删除后对应订单也会一并移除。`;
             }
