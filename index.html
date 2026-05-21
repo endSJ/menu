@@ -2200,9 +2200,12 @@
             requestBadge.style.display = count > 0 ? '' : 'none';
         }
 
+        let fulfillingRequestId = null;
+
         function fulfillRequest(requestId) {
             const req = dishRequests.find(r => r.id === requestId);
             if (req) {
+                fulfillingRequestId = requestId;
                 // Pre-fill the add form
                 document.getElementById('itemName').value = req.name;
                 document.getElementById('itemCategory').value = '';
@@ -2212,10 +2215,6 @@
                 document.querySelector('[data-tab="add"]').classList.add('active');
                 document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
                 document.getElementById('add-section').classList.add('active');
-                // Mark as fulfilled
-                req.fulfilled = true;
-                saveRequests();
-                renderRequests();
                 showToast('已跳转到添加页面，请填写详细信息~');
             }
         }
@@ -2269,6 +2268,7 @@
         // Tab Navigation
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
+                if (btn.dataset.tab !== 'add') fulfillingRequestId = null;
                 document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -2626,6 +2626,13 @@
             renderCategories();
             renderMenu();
             renderManageMenu();
+
+            // If adding from a dish request, mark it fulfilled
+            if (fulfillingRequestId) {
+                const req = dishRequests.find(r => r.id === fulfillingRequestId);
+                if (req) { req.fulfilled = true; saveRequests(); }
+                fulfillingRequestId = null;
+            }
 
             // Reset form
             addItemForm.reset();
