@@ -1527,20 +1527,35 @@
 
         async function saveToCloud(table, id, payload) {
             try {
-                const res = await fetch(`${SB_URL}/${table}?id=eq.${encodeURIComponent(String(id))}`, { headers: SB_HEADERS });
-                const existing = res.ok ? await res.json().catch(() => []) : [];
-                const method = existing.length > 0 ? 'PATCH' : 'POST';
-                const url = existing.length > 0
-                    ? `${SB_URL}/${table}?id=eq.${encodeURIComponent(String(id))}`
-                    : SB_URL + '/' + table;
-                await fetch(url, { method, headers: { ...SB_HEADERS, Prefer: 'return=minimal' }, body: JSON.stringify({ id: String(id), data: payload }) });
-            } catch (e) { /* silent */ }
+                const body = JSON.stringify({ id: String(id), data: payload });
+                // Skip if payload is too large (> 900KB, Supabase limit ~1MB)
+                if (body.length > 900000) { console.warn('Payload too large for', table, id, body.length); return; }
+                // POST with upsert (merge on duplicate primary key)
+                await fetch(`${SB_URL}/${table}`, {
+                    method: 'POST',
+                    headers: { ...SB_HEADERS, Prefer: 'resolution=merge-duplicates' },
+                    body
+                });
+            } catch (e) { console.warn('Save error:', table, e); }
         }
 
         async function deleteFromCloud(table, id) {
             try {
-                await fetch(`${SB_URL}/${table}?id=eq.${encodeURIComponent(String(id))}`, { method: 'DELETE', headers: SB_HEADERS });
-            } catch (e) { /* silent */ }
+                await fetch(`${SB_URL}/${table}?id=eq.${encodeURIComponent(String(id))}`, {
+                    method: 'DELETE',
+                    headers: SB_HEADERS
+                });
+            } catch (e) { console.warn('Delete error:', table, e); }
+        }
+
+        // Check connectivity once
+        async function checkCloud() {
+            try {
+                const res = await fetch(`${SB_URL}/orders?select=id&limit=1`, { headers: SB_HEADERS });
+                cloudOk = res.ok;
+                if (!res.ok) console.warn('Cloud check failed:', res.status);
+                return res.ok;
+            } catch (e) { cloudOk = false; return false; }
         }
 
         // ── Normalize helpers ────────────────────────────────────
@@ -1593,9 +1608,9 @@
         function setupPolling() {
             clearInterval(pollTimer);
             pollTimer = setInterval(async () => {
-                if (!cloudOk) return;
+                if (!cloudOk || !(await checkCloud())) return;
 
-                // Poll orders — only update if cloud has data
+                // Poll orders
                 const cloudOrders = (await loadFromCloud('orders')).map(normalizeOrder);
                 if (cloudOrders.length > 0 &&
                     JSON.stringify(cloudOrders) !== JSON.stringify(orderHistory)) {
@@ -1615,10 +1630,10 @@
                     renderManageMenu();
                 }
 
-                // Poll notifications (only in customer mode)
+                // Poll notifications (customer mode)
                 if (currentMode === 'customer') {
                     const cloudNotifs = await loadFromCloud('notifications');
-                    if (cloudNotifs.length > 0 && cloudNotifs.length > notifications.length) {
+                    if (cloudNotifs.length > notifications.length) {
                         const newNotifs = cloudNotifs.filter(n => !notifications.some(o => o.id === n.id));
                         notifications = cloudNotifs;
                         updateNotifyBell();
@@ -1626,11 +1641,14 @@
                     }
                 }
 
-                // Poll requests (only in chef mode)
+                // Poll requests (chef mode)
                 if (currentMode === 'chef') {
                     const cloudReqs = await loadFromCloud('dish_requests');
-                    if (cloudReqs.length > 0) dishRequests = cloudReqs;
-                    updateRequestBadge();
+                    if (cloudReqs.length !== dishRequests.length) {
+                        dishRequests = cloudReqs;
+                        updateRequestBadge();
+                        if (document.getElementById('requests-section').classList.contains('active')) renderRequests();
+                    }
                 }
             }, 5000);
         }
@@ -2599,7 +2617,8 @@
 
         async function boot() {
             try {
-                await initData();
+                cloudOk = await checkCloud();
+                if (cloudOk) await initData();
                 setupPolling();
             } catch (e) {
                 console.warn('Boot error:', e.message);
