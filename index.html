@@ -2788,7 +2788,12 @@
             imageUpload.querySelector('p').style.display = 'block';
             imageUpload.querySelector('.image-upload-icon').style.display = 'block';
 
-            document.querySelector('[data-tab="menu"]').click();
+            // Jump back to manage menu in chef mode
+            if (currentMode === 'chef') {
+                document.querySelector('[data-tab="manage"]').click();
+            } else {
+                document.querySelector('[data-tab="menu"]').click();
+            }
         });
 
         // Status helpers
