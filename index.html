@@ -2031,7 +2031,8 @@
         }
 
         function renderNotifyPanel() {
-            const all = notifications.slice(0, 30); // last 30
+            const sorted = [...notifications].sort((a, b) => (b.important ? 1 : 0) - (a.important ? 1 : 0));
+            const all = sorted.slice(0, 30);
             notifyPanelContent.innerHTML = all.length ? all.map(n => `
                 <div style="padding:10px 0;border-bottom:1px dashed var(--tiffany-light);display:flex;align-items:flex-start;gap:8px;">
                     <span style="font-size:1.2rem;flex-shrink:0;">${n.important ? '🚨' : 'ℹ️'}</span>
