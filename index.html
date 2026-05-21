@@ -1534,22 +1534,26 @@
         }
 
         async function saveToCloud(table, id, payload) {
-            if (!cloudOk) { console.warn('❌ cloudOk=false, 跳过保存 ' + table + '/' + id); return; }
+            if (!cloudOk) { console.warn('❌ cloudOk=false, 跳过保存 ' + table + '/' + id); return false; }
             try {
                 const body = JSON.stringify({ id: String(id), data: payload });
-                if (body.length > 900000) { console.warn('⚠️ 数据过大: ' + table + ' ' + id + ' ' + body.length); return; }
+                if (body.length > 900000) { console.warn('⚠️ 数据过大: ' + table + ' ' + id + ' ' + body.length); return false; }
+                console.log('📤 POST ' + table + '/' + id + ' body=' + body.length + 'bytes');
                 const res = await fetch(`${SB_URL}/${table}`, {
                     method: 'POST',
-                    headers: { ...SB_HEADERS, Prefer: 'resolution=merge-duplicates' },
+                    headers: { ...SB_HEADERS, 'Prefer': 'resolution=merge-duplicates' },
                     body
                 });
+                console.log('📥 HTTP ' + res.status + ' ' + res.statusText);
                 if (res.ok) {
-                    console.log('✅ 已保存到云端: ' + table + '/' + id);
+                    return true;
                 } else {
-                    console.warn('❌ 保存失败 HTTP ' + res.status + ': ' + table + '/' + id);
+                    const errText = await res.text().catch(() => '');
+                    console.error('❌ 保存失败 HTTP ' + res.status + ': ' + errText.substring(0, 200));
                     if (res.status === 401 || res.status === 403) cloudOk = false;
+                    return false;
                 }
-            } catch (e) { console.error('❌ 保存异常: ' + table + '/' + id + ' - ' + e.message); }
+            } catch (e) { console.error('❌ 保存异常: ' + e.message); return false; }
         }
 
         async function deleteFromCloud(table, id) {
@@ -2617,15 +2621,15 @@
 
             menuItems.push(newItem);
             console.log('📝 新增菜品: ' + name + ' (cloudOk=' + cloudOk + ')');
-            await saveMenuItems();
-            // Verify it actually saved to cloud
+            // Save only this single new item to cloud
+            const saveResult = await saveToCloud('menu_items', newItem.id, newItem);
+            // Verify immediately
             if (cloudOk) {
                 const verify = await loadFromCloud('menu_items');
+                console.log('🔍 云端验证: ' + verify.length + '条');
                 if (verify.length === 0) {
                     showToast('⚠️ 云端保存失败！检查 Supabase 配置');
-                    console.error('❌ 保存后验证失败：云端 menu_items 仍为空！');
                 } else {
-                    console.log('✅ 云端验证通过: ' + verify.length + ' 条菜单');
                     showToast('新品上架成功! ✨');
                 }
             } else {
