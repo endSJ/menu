@@ -1785,6 +1785,10 @@
             await saveToCloud('dish_requests', req.id, req);
         }
 
+        async function saveNotification(note) {
+            await saveToCloud('notifications', note.id, note);
+        }
+
         async function saveNotifications() {
             await Promise.all(notifications.map(n => saveToCloud('notifications', n.id, n)));
         }
