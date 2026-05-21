@@ -1310,7 +1310,11 @@
 
     <header>
         <h1>宝贝点餐台 💕</h1>
-        <p id="headerSubtitle">想吃什么，我都给你做~ <span class="notify-bell" id="notifyBell" style="display:none;" title="新消息">🔔</span></p>
+        <p id="headerSubtitle">想吃什么，我都给你做~ <span class="notify-bell" id="notifyBell" style="display:none;position:relative;" title="新消息">🔔</span>
+            <div class="request-dropdown" id="notifyPanel" style="display:none; position:absolute; right:20px; top:100%; z-index:25; min-width:320px; max-height:360px; overflow-y:auto; text-align:left; padding:16px; margin-top:4px;">
+                <div id="notifyPanelContent"></div>
+            </div>
+        </p>
         <div class="switch-mode-link" id="switchModeLink">🔄 切换身份</div>
         <div class="switch-mode-link" id="syncNowLink" style="margin-left:12px;">☁️ 同步</div>
     </header>
@@ -1823,6 +1827,8 @@
         const oldOrdersTabBtn = document.getElementById('oldOrdersTabBtn');
         const oldOrdersList = document.getElementById('oldOrdersList');
         const notifyBell = document.getElementById('notifyBell');
+        const notifyPanel = document.getElementById('notifyPanel');
+        const notifyPanelContent = document.getElementById('notifyPanelContent');
         const modalTextarea = document.getElementById('modalTextarea');
         const orderStatusOverlay = document.getElementById('orderStatusOverlay');
         const orderStatusIcon = document.getElementById('orderStatusIcon');
@@ -1989,12 +1995,13 @@
         }
 
         // Notification system
-        function addNotification(orderId, type, message) {
+        function addNotification(orderId, type, message, important) {
             notifications.unshift({
                 id: generateId(),
                 orderId,
                 type,
                 message,
+                important: !!important,
                 date: new Date().toLocaleString('zh-CN'),
                 read: false
             });
@@ -2004,13 +2011,39 @@
 
         function updateNotifyBell() {
             const unread = notifications.filter(n => !n.read).length;
+            const hasImportant = notifications.some(n => !n.read && n.important);
             if (currentMode === 'customer' && unread > 0) {
                 notifyBell.style.display = '';
                 notifyBell.classList.add('has-notify');
+                notifyBell.textContent = hasImportant ? '🚨' : '🔔';
             } else {
                 notifyBell.classList.remove('has-notify');
+                notifyBell.textContent = '🔔';
                 notifyBell.style.display = currentMode === 'customer' ? '' : 'none';
             }
+        }
+
+        function renderNotifyPanel() {
+            const all = notifications.slice(0, 30); // last 30
+            notifyPanelContent.innerHTML = all.length ? all.map(n => `
+                <div style="padding:10px 0;border-bottom:1px dashed var(--tiffany-light);display:flex;align-items:flex-start;gap:8px;">
+                    <span style="font-size:1.2rem;flex-shrink:0;">${n.important ? '🚨' : 'ℹ️'}</span>
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:0.85rem;${n.important ? 'color:#d63031;font-weight:500;' : ''}">${n.message}</div>
+                        <div style="font-size:0.72rem;color:var(--text-light);">${n.date}</div>
+                    </div>
+                    <button onclick="event.stopPropagation(); dismissNotify('${n.id}')"
+                        style="padding:3px 10px;border:1px solid var(--tiffany-light);border-radius:10px;background:white;color:var(--text-light);font-size:0.72rem;cursor:pointer;flex-shrink:0;">已读</button>
+                </div>
+            `).join('') : '<div style="text-align:center;color:var(--text-light);">暂无消息</div>';
+        }
+
+        function dismissNotify(id) {
+            notifications = notifications.filter(n => n.id !== id);
+            saveNotifications();
+            deleteFromCloud('notifications', id);
+            renderNotifyPanel();
+            updateNotifyBell();
         }
 
         function showPendingNotifications() {
@@ -2030,13 +2063,21 @@
             updateNotifyBell();
         }
 
-        notifyBell.addEventListener('click', () => {
-            const unread = notifications.filter(n => !n.read);
-            if (unread.length === 0) {
-                showToast('没有新消息~');
-                return;
+        notifyBell.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = notifyPanel.style.display !== 'none';
+            if (isOpen) {
+                notifyPanel.style.display = 'none';
+            } else {
+                renderNotifyPanel();
+                notifyPanel.style.display = '';
             }
-            showPendingNotifications();
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!notifyPanel.contains(e.target) && e.target !== notifyBell) {
+                notifyPanel.style.display = 'none';
+            }
         });
 
         function acceptOrder(orderId) {
@@ -2768,6 +2809,9 @@
             renderMenu();
             renderManageMenu();
 
+            // Notify girlfriend about new dish
+            addNotification(null, 'dish_added', `男友上架了新品「${name}」✨ 快去看看~`, false);
+
             // If adding from a dish request, mark it fulfilled
             if (fulfillingRequestId) {
                 const req = dishRequests.find(r => r.id === fulfillingRequestId);
@@ -2928,7 +2972,13 @@
                 renderOrderPanel();
                 renderManageMenu();
                 renderChefOrders();
-                showToast('菜品及关联订单已清理');
+                // Notify girlfriend
+                if (affectedOrders.length > 0) {
+                    addNotification(null, 'dish_deleted_orders', `😱 男友下架了「${item.name}」，你今日的 ${affectedOrders.length} 笔相关订单已被取消`, true);
+                } else {
+                    addNotification(null, 'dish_deleted', `男友下架了「${item.name}」，菜单已更新`, false);
+                }
+                showToast('菜品已下架');
             }
         }
 
