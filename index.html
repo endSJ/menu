@@ -1688,7 +1688,9 @@
                 }
 
                 // Poll menu — cloud always overwrites local
-                const cloudMenu = (await loadFromCloud('menu_items')).map(normalizeMenuItem);
+                const rawMenu = await loadFromCloud('menu_items');
+                const cloudMenu = rawMenu.map(normalizeMenuItem);
+                console.log('🔄#' + pollCount + ' 轮询菜单: 云端' + cloudMenu.length + '条 本地' + menuItems.length + '条');
                 if (cloudMenu.length > 0) {
                     menuItems = cloudMenu;
                     safeSet('menuItems', menuItems);
@@ -1699,6 +1701,8 @@
                     renderCategories();
                     renderMenu();
                     renderManageMenu();
+                } else {
+                    console.warn('🔄#' + pollCount + ' 云端菜单为空！cloudOk=' + cloudOk);
                 }
 
                 // Poll notifications (customer mode)
@@ -2614,6 +2618,19 @@
             menuItems.push(newItem);
             console.log('📝 新增菜品: ' + name + ' (cloudOk=' + cloudOk + ')');
             await saveMenuItems();
+            // Verify it actually saved to cloud
+            if (cloudOk) {
+                const verify = await loadFromCloud('menu_items');
+                if (verify.length === 0) {
+                    showToast('⚠️ 云端保存失败！检查 Supabase 配置');
+                    console.error('❌ 保存后验证失败：云端 menu_items 仍为空！');
+                } else {
+                    console.log('✅ 云端验证通过: ' + verify.length + ' 条菜单');
+                    showToast('新品上架成功! ✨');
+                }
+            } else {
+                showToast('新品上架成功! (离线模式)');
+            }
             renderCategories();
             renderMenu();
             renderManageMenu();
@@ -2626,7 +2643,6 @@
             imageUpload.querySelector('p').style.display = 'block';
             imageUpload.querySelector('.image-upload-icon').style.display = 'block';
 
-            showToast('新品上架成功! ✨');
             document.querySelector('[data-tab="menu"]').click();
         });
 
