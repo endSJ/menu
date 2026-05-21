@@ -2312,9 +2312,9 @@
 
         // Render requests
         function renderRequests() {
-            const pending = dishRequests.filter(r => !r.fulfilled && !r.declined);
-            const fulfilled = dishRequests.filter(r => r.fulfilled);
-            const declined = dishRequests.filter(r => r.declined);
+            const pending = dishRequests.filter(r => !r.fulfilled && !r.declined).reverse();
+            const fulfilled = dishRequests.filter(r => r.fulfilled).reverse();
+            const declined = dishRequests.filter(r => r.declined).reverse();
             const all = [...pending, ...fulfilled, ...declined];
 
             requestList.innerHTML = all.length ? all.map(req => `
