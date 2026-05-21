@@ -1503,22 +1503,34 @@
         let selectedMeal = 'breakfast';
         let selectedImage = null;
 
+        // Safe localStorage wrapper (Tracking Prevention may block it)
+        function safeGet(k, fallback) {
+            try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+        }
+        function safeSet(k, v) {
+            try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* blocked */ }
+        }
+        function safeGetRaw(k, fallback) {
+            try { const v = localStorage.getItem(k); return v !== null ? v : fallback; } catch (e) { return fallback; }
+        }
+        function safeSetRaw(k, v) {
+            try { localStorage.setItem(k, v); } catch (e) { /* blocked */ }
+        }
+
         (function loadLocalState() {
-            try { menuItems = JSON.parse(localStorage.getItem('menuItems')) || []; } catch (e) {}
-            try { orderHistory = JSON.parse(localStorage.getItem('orderHistory')) || []; } catch (e) {}
-            try { cart = JSON.parse(localStorage.getItem('cart')) || {}; } catch (e) {}
-            try { dishRequests = JSON.parse(localStorage.getItem('dishRequests')) || []; } catch (e) {}
-            try { notifications = JSON.parse(localStorage.getItem('notifications')) || []; } catch (e) {}
-            currentMode = localStorage.getItem('currentMode') || 'customer';
+            menuItems = safeGet('menuItems', []);
+            orderHistory = safeGet('orderHistory', []);
+            cart = safeGet('cart', {});
+            dishRequests = safeGet('dishRequests', []);
+            notifications = safeGet('notifications', []);
+            currentMode = safeGetRaw('currentMode', 'customer');
         })();
 
         function generateId() {
             return Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 8);
         }
 
-        function saveCart() {
-            localStorage.setItem('cart', JSON.stringify(cart));
-        }
+        function saveCart() { safeSet('cart', cart); }
 
         // ── Cloud data helpers ───────────────────────────────────
 
@@ -1637,32 +1649,32 @@
         // ── Save wrappers (cloud + local) ───────────────────────
 
         async function saveMenuItems() {
-            localStorage.setItem('menuItems', JSON.stringify(menuItems));
+            safeSet('menuItems', menuItems);
             await Promise.all(menuItems.map(item => saveToCloud('menu_items', item.id, item)));
         }
 
         async function deleteMenuItemCloud(id) {
             await deleteFromCloud('menu_items', id);
-            localStorage.setItem('menuItems', JSON.stringify(menuItems));
+            safeSet('menuItems', menuItems);
         }
 
         async function saveOrders() {
-            localStorage.setItem('orderHistory', JSON.stringify(orderHistory));
+            safeSet('orderHistory', orderHistory);
             await Promise.all(orderHistory.map(o => saveToCloud('orders', o.id, o)));
         }
 
         async function saveRequests() {
-            localStorage.setItem('dishRequests', JSON.stringify(dishRequests));
+            safeSet('dishRequests', dishRequests);
             await Promise.all(dishRequests.map(r => saveToCloud('dish_requests', r.id, r)));
         }
 
         async function saveRequest(req) {
             await saveToCloud('dish_requests', req.id, req);
-            localStorage.setItem('dishRequests', JSON.stringify(dishRequests));
+            safeSet('dishRequests', dishRequests);
         }
 
         async function saveNotifications() {
-            localStorage.setItem('notifications', JSON.stringify(notifications));
+            safeSet('notifications', notifications);
             await Promise.all(notifications.map(n => saveToCloud('notifications', n.id, n)));
         }
 
@@ -1734,7 +1746,7 @@
 
         function setMode(mode) {
             currentMode = mode;
-            localStorage.setItem('currentMode', mode);
+            safeSetRaw('currentMode', mode);
 
             // Update header
             if (mode === 'customer') {
@@ -2583,7 +2595,7 @@
 
         // Save Menu Items
         function saveMenuItems() {
-            localStorage.setItem('menuItems', JSON.stringify(menuItems));
+            safeSet('menuItems', menuItems);
         }
 
         // Show Toast
