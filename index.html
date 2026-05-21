@@ -1318,11 +1318,17 @@
         <!-- Customer request trigger -->
         <div id="customerRequestHint" style="position:relative; display:none; text-align:right; margin-bottom:4px;">
             <button class="request-toggle-btn" id="requestToggleBtn">💌 想吃别的？告诉男友~</button>
+            <button class="request-toggle-btn" id="requestResponseBtn" style="display:none; margin-left:6px; position:relative;">
+                💬 男友回复 <span class="badge" id="responseBadge" style="display:none;">0</span>
+            </button>
             <div class="request-dropdown" id="requestDropdown" style="display:none; position:absolute; right:0; z-index:20; min-width:340px;">
                 <div class="request-form" id="customerRequestForm">
                     <input type="text" id="customerRequestInput" placeholder="输入想吃的菜名...">
                     <button class="request-submit-btn" id="customerRequestBtn">呼叫 💕</button>
                 </div>
+            </div>
+            <div class="request-dropdown" id="requestResponsePanel" style="display:none; position:absolute; right:0; z-index:20; min-width:320px; max-height:360px; overflow-y:auto; text-align:left; padding:16px;">
+                <div id="requestResponseContent"></div>
             </div>
         </div>
         <div class="tabs" id="tabsBar">
@@ -1612,7 +1618,7 @@
             // Cloud is the ONLY source of truth
             menuItems = cloudMenu.map(normalizeMenuItem);
             orderHistory = cloudOrders.map(normalizeOrder);
-            dishRequests = cloudRequests;
+            dishRequests = cloudRequests.map(r => ({ declined: false, seenByGirl: true, ...r }));
             notifications = cloudNotifs;
             // Cache what cloud gave us (for offline startup only)
             cacheLocal();
@@ -1634,7 +1640,7 @@
             ]);
             menuItems = cloudMenu.map(normalizeMenuItem);
             orderHistory = cloudOrders.map(normalizeOrder);
-            dishRequests = cloudRequests;
+            dishRequests = cloudRequests.map(r => ({ declined: false, seenByGirl: true, ...r }));
             notifications = cloudNotifs;
             cacheLocal();
             renderCategories();
@@ -1707,6 +1713,11 @@
                         notifications = cloudNotifs;
                         updateNotifyBell();
                         if (newNotifs.length > 0) showPendingNotifications();
+                    }
+                    const cloudReqs = await loadFromCloud('dish_requests');
+                    if (JSON.stringify(cloudReqs) !== JSON.stringify(dishRequests)) {
+                        dishRequests = cloudReqs;
+                        updateResponseBadge();
                     }
                 }
 
@@ -1848,6 +1859,7 @@
                 orderPanel.style.display = '';
                 mealSelector.style.display = '';
                 updateNotifyBell();
+                updateResponseBadge();
                 showPendingNotifications();
             } else {
                 // Chef: 订单 + 上架新品 + 新菜请求
@@ -2125,11 +2137,66 @@
         // Customer request toggle
         const requestToggleBtn = document.getElementById('requestToggleBtn');
         const requestDropdown = document.getElementById('requestDropdown');
+        const requestResponseBtn = document.getElementById('requestResponseBtn');
+        const requestResponsePanel = document.getElementById('requestResponsePanel');
+        const requestResponseContent = document.getElementById('requestResponseContent');
+        const responseBadge = document.getElementById('responseBadge');
 
         function closeRequestDropdown() {
             requestDropdown.style.display = 'none';
+            requestResponsePanel.style.display = 'none';
             requestToggleBtn.textContent = '💌 想吃别的？告诉男友~';
         }
+
+        function updateResponseBadge() {
+            const unread = dishRequests.filter(r => (r.fulfilled || r.declined) && !r.seenByGirl);
+            const count = unread.length;
+            if (count > 0) {
+                requestResponseBtn.style.display = '';
+                responseBadge.textContent = count;
+                responseBadge.style.display = '';
+            } else {
+                responseBadge.style.display = 'none';
+                if (!dishRequests.some(r => r.fulfilled || r.declined)) {
+                    requestResponseBtn.style.display = 'none';
+                }
+            }
+        }
+
+        function renderRequestResponses() {
+            const responded = dishRequests.filter(r => r.fulfilled || r.declined).reverse();
+            requestResponseContent.innerHTML = responded.length ? responded.map(r => {
+                if (r.fulfilled) {
+                    return `<div style="padding:10px 0;border-bottom:1px dashed var(--tiffany-light);">
+                        <div>📝 <b>${r.name}</b></div>
+                        <div style="color:var(--tiffany-dark);font-size:0.85rem;margin-top:4px;">✅ 男友安排上啦，等你来点~</div>
+                    </div>`;
+                } else {
+                    return `<div style="padding:10px 0;border-bottom:1px dashed var(--tiffany-light);">
+                        <div>📝 <b>${r.name}</b></div>
+                        <div style="color:#d63031;font-size:0.85rem;margin-top:4px;">😢 男友这次做不了啦</div>
+                        <div style="color:var(--text-light);font-size:0.8rem;">${r.declinedReason || ''}</div>
+                    </div>`;
+                }
+            }).join('') : '<div style="text-align:center;color:var(--text-light);">暂无回复</div>';
+
+            // Mark all as seen
+            dishRequests.forEach(r => { if (r.fulfilled || r.declined) r.seenByGirl = true; });
+            saveRequests();
+            updateResponseBadge();
+        }
+
+        requestResponseBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = requestResponsePanel.style.display !== 'none';
+            if (isOpen) {
+                requestResponsePanel.style.display = 'none';
+            } else {
+                requestDropdown.style.display = 'none';
+                renderRequestResponses();
+                requestResponsePanel.style.display = '';
+            }
+        });
 
         requestToggleBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -2143,7 +2210,8 @@
         });
 
         document.addEventListener('click', (e) => {
-            if (!requestDropdown.contains(e.target) && e.target !== requestToggleBtn) {
+            if (!requestDropdown.contains(e.target) && e.target !== requestToggleBtn
+                && !requestResponsePanel.contains(e.target) && e.target !== requestResponseBtn) {
                 closeRequestDropdown();
             }
         });
@@ -2170,24 +2238,28 @@
 
         // Render requests
         function renderRequests() {
-            const pending = dishRequests.filter(r => !r.fulfilled);
+            const pending = dishRequests.filter(r => !r.fulfilled && !r.declined);
             const fulfilled = dishRequests.filter(r => r.fulfilled);
-            const all = [...pending, ...fulfilled];
+            const declined = dishRequests.filter(r => r.declined);
+            const all = [...pending, ...fulfilled, ...declined];
 
             requestList.innerHTML = all.length ? all.map(req => `
-                <div class="request-item" style="${req.fulfilled ? 'opacity: 0.5;' : ''}">
+                <div class="request-item" style="${req.fulfilled || req.declined ? 'opacity: 0.55;' : ''}">
                     <div class="request-info">
-                        <span style="font-size: 1.5rem;">${req.fulfilled ? '✅' : '💌'}</span>
+                        <span style="font-size: 1.5rem;">${req.fulfilled ? '✅' : req.declined ? '😢' : '💌'}</span>
                         <div>
                             <div class="request-dish-name">${req.name}</div>
                             <div class="request-date">${req.date}</div>
+                            ${req.declined ? `<div style="font-size:0.78rem;color:var(--text-light);">${req.declinedReason || ''}</div>` : ''}
                         </div>
                     </div>
                     <div class="request-actions">
-                        ${req.fulfilled ? '<span style="font-size:0.85rem;color:var(--tiffany-dark);">已上架</span>' : `
+                        ${req.fulfilled ? '<span style="font-size:0.85rem;color:var(--tiffany-dark);">已上架 ✅</span>' : ''}
+                        ${req.declined ? '<span style="font-size:0.85rem;color:#d63031;">已婉拒</span>' : ''}
+                        ${!req.fulfilled && !req.declined ? `
                             <button class="fulfill-btn" onclick="fulfillRequest('${req.id}')">我来做 👨‍🍳</button>
                             <button class="dismiss-btn" onclick="dismissRequest('${req.id}')">婉拒</button>
-                        `}
+                        ` : ''}
                     </div>
                 </div>
             `).join('') : '<div class="empty-state"><div class="empty-state-icon">💌</div><p>暂无新菜请求</p></div>';
@@ -2224,19 +2296,13 @@
             const req = dishRequests.find(r => r.id === requestId);
             if (!req) return;
             const reason = await showDeclineModal(req.name);
-            if (!reason) return; // cancelled
-            dishRequests = dishRequests.filter(r => r.id !== requestId);
-            deleteFromCloud('dish_requests', requestId);
-            // Notify girlfriend
-            notifications.unshift({
-                id: generateId(),
-                orderId: null,
-                type: 'request_declined',
-                message: `男友婉拒了新菜请求「${req.name}」：${reason} 😢`,
-                date: new Date().toLocaleString('zh-CN'),
-                read: false
-            });
-            saveNotifications();
+            if (!reason) return;
+            // Mark as declined instead of deleting
+            req.fulfilled = false;
+            req.declined = true;
+            req.declinedReason = reason;
+            req.seenByGirl = false;
+            saveRequests();
             renderRequests();
             showToast('已婉拒，宝贝会收到通知');
         }
@@ -2643,17 +2709,9 @@
                 const req = dishRequests.find(r => r.id === fulfillingRequestId);
                 if (req) {
                     req.fulfilled = true;
+                    req.declined = false;
+                    req.seenByGirl = false;
                     saveRequests();
-                    // Notify girlfriend
-                    notifications.unshift({
-                        id: generateId(),
-                        orderId: null,
-                        type: 'request_fulfilled',
-                        message: `男友已上架你想要的「${req.name}」啦，快去点单吧~ 🎉`,
-                        date: new Date().toLocaleString('zh-CN'),
-                        read: false
-                    });
-                    saveNotifications();
                 }
                 fulfillingRequestId = null;
             }
