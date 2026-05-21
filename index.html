@@ -1602,22 +1602,39 @@
                 loadFromCloud('dish_requests'),
                 loadFromCloud('notifications')
             ]);
-            console.log('📡 云端加载完成: 菜单' + results[0].length + ' 订单' + results[1].length + ' 请求' + results[2].length + ' 通知' + results[3].length);
+            console.log('📡 云端: 菜单' + results[0].length + ' 订单' + results[1].length + ' 请求' + results[2].length + ' 通知' + results[3].length);
+            console.log('📦 本地: 菜单' + menuItems.length + ' 订单' + orderHistory.length);
 
             const [cloudMenu, cloudOrders, cloudRequests, cloudNotifs] = results;
 
-            // Cloud always overwrites local
-            menuItems = cloudMenu.length ? cloudMenu.map(normalizeMenuItem) : menuItems.map(normalizeMenuItem);
-            if (cloudMenu.length) safeSet('menuItems', menuItems);
+            // Cloud wins if it has data, otherwise upload local to cloud
+            if (cloudMenu.length > 0) {
+                menuItems = cloudMenu.map(normalizeMenuItem);
+                safeSet('menuItems', menuItems);
+            } else if (menuItems.length > 0) {
+                console.log('⬆️ 云端无数据，上传本地 ' + menuItems.length + ' 条菜单...');
+                menuItems = menuItems.map(normalizeMenuItem);
+                await Promise.all(menuItems.map(item => saveToCloud('menu_items', item.id, item)));
+            }
 
-            orderHistory = cloudOrders.length ? cloudOrders.map(normalizeOrder) : orderHistory.map(normalizeOrder);
-            if (cloudOrders.length) safeSet('orderHistory', orderHistory);
+            if (cloudOrders.length > 0) {
+                orderHistory = cloudOrders.map(normalizeOrder);
+                safeSet('orderHistory', orderHistory);
+            } else if (orderHistory.length > 0) {
+                console.log('⬆️ 云端无数据，上传本地 ' + orderHistory.length + ' 条订单...');
+                orderHistory = orderHistory.map(normalizeOrder);
+                await Promise.all(orderHistory.map(o => saveToCloud('orders', o.id, o)));
+            }
 
-            dishRequests = cloudRequests.length ? cloudRequests : dishRequests;
-            if (cloudRequests.length) safeSet('dishRequests', dishRequests);
+            if (cloudRequests.length > 0) {
+                dishRequests = cloudRequests;
+                safeSet('dishRequests', dishRequests);
+            }
 
-            notifications = cloudNotifs.length ? cloudNotifs : notifications;
-            if (cloudNotifs.length) safeSet('notifications', notifications);
+            if (cloudNotifs.length > 0) {
+                notifications = cloudNotifs;
+                safeSet('notifications', notifications);
+            }
 
             const nc = {};
             for (const [k, v] of Object.entries(cart)) nc[String(k)] = v;
@@ -2561,7 +2578,7 @@
         });
 
         // Add Item Form
-        addItemForm.addEventListener('submit', (e) => {
+        addItemForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const name = document.getElementById('itemName').value.trim();
             const category = document.getElementById('itemCategory').value;
@@ -2592,7 +2609,7 @@
 
             menuItems.push(newItem);
             console.log('📝 新增菜品: ' + name + ' (cloudOk=' + cloudOk + ')');
-            saveMenuItems();
+            await saveMenuItems();
             renderCategories();
             renderMenu();
             renderManageMenu();
