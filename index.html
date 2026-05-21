@@ -1465,30 +1465,12 @@
     </div>
 
     <script>
-        // ── Supabase Cloud Sync ──────────────────────────────────
-        // ※ Supabase SDK 通过动态加载，失败也不影响页面
-        const SUPABASE_URL = 'https://ajwtywxhqronkyjooisb.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_XwDn9rj4K9EhEnvSX2mXwW_wddFqgbV';
-        let supabase = null;
-        let cloudOk = false;
-
-        (function loadSupabaseSDK() {
-            const script = document.createElement('script');
-            script.src = 'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js';
-            script.onload = function () {
-                try {
-                    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-                    cloudOk = true;
-                    console.log('Supabase ready');
-                } catch (e) {
-                    console.warn('Supabase init failed:', e.message);
-                }
-            };
-            script.onerror = function () {
-                console.warn('Supabase CDN unavailable, local mode only');
-            };
-            document.head.appendChild(script);
-        })();
+        // ── Supabase Cloud Sync (REST API, zero external deps) ───
+        const SB_URL = 'https://ajwtywxhqronkyjooisb.supabase.co/rest/v1';
+        const SB_KEY = 'sb_publishable_XwDn9rj4K9EhEnvSX2mXwW_wddFqgbV';
+        const SB_HEADERS = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+        let cloudOk = true; // Use fetch, no CDN needed
+        let pollTimer = null;
 
         // Local state — always load from localStorage first (instant)
         const STORAGE_LIMIT = 4 * 1024 * 1024;
@@ -1535,25 +1517,29 @@
         // ── Cloud data helpers ───────────────────────────────────
 
         async function loadFromCloud(table) {
-            if (!cloudOk) return [];
             try {
-                const { data, error } = await supabase.from(table).select('data');
-                if (error) { console.warn('Supabase load:', error); return []; }
-                return (data || []).map(row => row.data);
-            } catch (e) { console.warn('Supabase load error:', e); return []; }
+                const res = await fetch(`${SB_URL}/${table}?select=*`, { headers: SB_HEADERS });
+                if (!res.ok) { console.warn('load', table, res.status); return []; }
+                const rows = await res.json();
+                return (rows || []).map(r => r.data);
+            } catch (e) { cloudOk = false; return []; }
         }
 
         async function saveToCloud(table, id, payload) {
-            if (!cloudOk) return;
             try {
-                await supabase.from(table).upsert({ id: String(id), data: payload }, { onConflict: 'id' });
+                const res = await fetch(`${SB_URL}/${table}?id=eq.${encodeURIComponent(String(id))}`, { headers: SB_HEADERS });
+                const existing = res.ok ? await res.json().catch(() => []) : [];
+                const method = existing.length > 0 ? 'PATCH' : 'POST';
+                const url = existing.length > 0
+                    ? `${SB_URL}/${table}?id=eq.${encodeURIComponent(String(id))}`
+                    : SB_URL + '/' + table;
+                await fetch(url, { method, headers: { ...SB_HEADERS, Prefer: 'return=minimal' }, body: JSON.stringify({ id: String(id), data: payload }) });
             } catch (e) { /* silent */ }
         }
 
         async function deleteFromCloud(table, id) {
-            if (!cloudOk) return;
             try {
-                await supabase.from(table).delete().eq('id', String(id));
+                await fetch(`${SB_URL}/${table}?id=eq.${encodeURIComponent(String(id))}`, { method: 'DELETE', headers: SB_HEADERS });
             } catch (e) { /* silent */ }
         }
 
@@ -1598,52 +1584,58 @@
             cart = nc;
         }
 
-        // ── Realtime subscriptions ───────────────────────────────
+        // ── Cloud polling (replaces Realtime, no SDK needed) ─────
 
-        function setupRealtime() {
-            if (!cloudOk) return;
-            supabase.channel('orders-changes')
-                .on('postgres_changes',
-                    { event: '*', schema: 'public', table: 'orders' },
-                    async () => {
-                        orderHistory = (await loadFromCloud('orders')).map(normalizeOrder);
-                        if (currentMode === 'chef') renderChefOrders();
-                        if (currentMode === 'customer' && document.getElementById('history-section').classList.contains('active')) {
-                            renderHistory();
-                        }
-                    })
-                .subscribe();
+        let lastOrderCount = 0;
+        let lastMenuHash = '';
+        let lastNotifCount = 0;
 
-            supabase.channel('menu-changes')
-                .on('postgres_changes',
-                    { event: '*', schema: 'public', table: 'menu_items' },
-                    async () => {
-                        menuItems = (await loadFromCloud('menu_items')).map(normalizeMenuItem);
-                        renderCategories();
-                        renderMenu();
-                        renderManageMenu();
-                    })
-                .subscribe();
+        function setupPolling() {
+            clearInterval(pollTimer);
+            pollTimer = setInterval(async () => {
+                if (!cloudOk) return;
 
-            supabase.channel('requests-changes')
-                .on('postgres_changes',
-                    { event: '*', schema: 'public', table: 'dish_requests' },
-                    async () => {
-                        dishRequests = await loadFromCloud('dish_requests');
-                        updateRequestBadge();
-                        if (document.getElementById('requests-section').classList.contains('active')) renderRequests();
-                    })
-                .subscribe();
+                // Poll orders
+                const cloudOrders = (await loadFromCloud('orders')).map(normalizeOrder);
+                if (cloudOrders.length !== lastOrderCount ||
+                    JSON.stringify(cloudOrders) !== JSON.stringify(orderHistory)) {
+                    orderHistory = cloudOrders;
+                    lastOrderCount = cloudOrders.length;
+                    if (currentMode === 'chef') renderChefOrders();
+                    if (currentMode === 'customer' && document.getElementById('history-section').classList.contains('active')) {
+                        renderHistory();
+                    }
+                }
 
-            supabase.channel('notifs-changes')
-                .on('postgres_changes',
-                    { event: 'INSERT', schema: 'public', table: 'notifications' },
-                    async () => {
-                        notifications = await loadFromCloud('notifications');
+                // Poll menu
+                const cloudMenu = (await loadFromCloud('menu_items')).map(normalizeMenuItem);
+                const menuHash = JSON.stringify(cloudMenu);
+                if (menuHash !== lastMenuHash) {
+                    menuItems = cloudMenu;
+                    lastMenuHash = menuHash;
+                    renderCategories();
+                    renderMenu();
+                    renderManageMenu();
+                }
+
+                // Poll notifications (only in customer mode)
+                if (currentMode === 'customer') {
+                    const cloudNotifs = await loadFromCloud('notifications');
+                    if (cloudNotifs.length !== lastNotifCount) {
+                        const newNotifs = cloudNotifs.filter(n => !notifications.some(o => o.id === n.id));
+                        notifications = cloudNotifs;
+                        lastNotifCount = cloudNotifs.length;
                         updateNotifyBell();
-                        if (currentMode === 'customer') showPendingNotifications();
-                    })
-                .subscribe();
+                        if (newNotifs.length > 0) showPendingNotifications();
+                    }
+                }
+
+                // Poll requests (only in chef mode)
+                if (currentMode === 'chef') {
+                    dishRequests = await loadFromCloud('dish_requests');
+                    updateRequestBadge();
+                }
+            }, 5000);
         }
 
         // ── Save wrappers (cloud + local) ───────────────────────
@@ -2611,7 +2603,7 @@
         async function boot() {
             try {
                 await initData();
-                setupRealtime();
+                setupPolling();
             } catch (e) {
                 console.warn('Boot error:', e.message);
             }
