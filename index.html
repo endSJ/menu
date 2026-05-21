@@ -1500,12 +1500,10 @@
             try { localStorage.setItem(k, v); } catch (e) { /* blocked */ }
         }
 
+        // Start with empty state. Cloud will fill everything via initData/polling.
+        // localStorage is only used for cart and currentMode.
         (function loadLocalState() {
-            menuItems = safeGet('menuItems', []);
-            orderHistory = safeGet('orderHistory', []);
             cart = safeGet('cart', {});
-            dishRequests = safeGet('dishRequests', []);
-            notifications = safeGet('notifications', []);
             currentMode = safeGetRaw('currentMode', 'customer');
         })();
 
@@ -1611,15 +1609,13 @@
 
             const [cloudMenu, cloudOrders, cloudRequests, cloudNotifs] = results;
 
-            // Cloud always overwrites local. Always.
-            menuItems = (cloudMenu.length > 0 ? cloudMenu : menuItems).map(normalizeMenuItem);
-            orderHistory = (cloudOrders.length > 0 ? cloudOrders : orderHistory).map(normalizeOrder);
-            dishRequests = cloudRequests.length > 0 ? cloudRequests : dishRequests;
-            notifications = cloudNotifs.length > 0 ? cloudNotifs : notifications;
-            safeSet('menuItems', menuItems);
-            safeSet('orderHistory', orderHistory);
-            safeSet('dishRequests', dishRequests);
-            safeSet('notifications', notifications);
+            // Cloud is the ONLY source of truth
+            menuItems = cloudMenu.map(normalizeMenuItem);
+            orderHistory = cloudOrders.map(normalizeOrder);
+            dishRequests = cloudRequests;
+            notifications = cloudNotifs;
+            // Cache what cloud gave us (for offline startup only)
+            cacheLocal();
 
             const nc = {};
             for (const [k, v] of Object.entries(cart)) nc[String(k)] = v;
@@ -1636,14 +1632,11 @@
                 loadFromCloud('dish_requests'),
                 loadFromCloud('notifications')
             ]);
-            menuItems = (cloudMenu.length > 0 ? cloudMenu : menuItems).map(normalizeMenuItem);
-            orderHistory = (cloudOrders.length > 0 ? cloudOrders : orderHistory).map(normalizeOrder);
-            dishRequests = cloudRequests.length > 0 ? cloudRequests : dishRequests;
-            notifications = cloudNotifs.length > 0 ? cloudNotifs : notifications;
-            safeSet('menuItems', menuItems);
-            safeSet('orderHistory', orderHistory);
-            safeSet('dishRequests', dishRequests);
-            safeSet('notifications', notifications);
+            menuItems = cloudMenu.map(normalizeMenuItem);
+            orderHistory = cloudOrders.map(normalizeOrder);
+            dishRequests = cloudRequests;
+            notifications = cloudNotifs;
+            cacheLocal();
             renderCategories();
             renderMenu();
             renderManageMenu();
@@ -1681,91 +1674,76 @@
                 if (!cloudOk) { console.log('🔄 轮询#' + pollCount + ' 尝试重连...'); await checkCloud(); }
                 if (!cloudOk) { console.warn('🔄 轮询#' + pollCount + ' cloudOk=false, 跳过'); return; }
 
-                // Poll orders — cloud always overwrites local
+                // Poll — cloud always overwrites local, unconditionally
                 const cloudOrders = (await loadFromCloud('orders')).map(normalizeOrder);
-                if (cloudOrders.length > 0) {
-                    orderHistory = cloudOrders;
-                    if (currentMode === 'chef') renderChefOrders();
-                    if (currentMode === 'customer' && document.getElementById('history-section').classList.contains('active')) {
-                        renderHistory();
-                    }
-                }
+                orderHistory = cloudOrders;
+                if (currentMode === 'chef') renderChefOrders();
+                if (currentMode === 'customer' && document.getElementById('history-section').classList.contains('active')) renderHistory();
 
-                // Poll menu — cloud always overwrites local
                 const rawMenu = await loadFromCloud('menu_items');
                 const cloudMenu = rawMenu.map(normalizeMenuItem);
-                console.log('🔄#' + pollCount + ' 轮询菜单: 云端' + cloudMenu.length + '条 本地' + menuItems.length + '条');
-                if (cloudMenu.length > 0) {
-                    menuItems = cloudMenu;
-                    safeSet('menuItems', menuItems);
-                    Object.keys(cart).forEach(cid => {
-                        if (!menuItems.some(m => m.id === cid)) delete cart[cid];
-                    });
-                    saveCart();
-                    renderCategories();
-                    renderMenu();
-                    renderManageMenu();
-                } else {
-                    console.warn('🔄#' + pollCount + ' 云端菜单为空！cloudOk=' + cloudOk);
-                }
+                console.log('🔄#' + pollCount + ' 菜单: 云端' + cloudMenu.length + '条 本地' + menuItems.length + '条');
+                menuItems = cloudMenu;
+                cacheLocal();
+                Object.keys(cart).forEach(cid => {
+                    if (!menuItems.some(m => m.id === cid)) delete cart[cid];
+                });
+                saveCart();
+                renderCategories();
+                renderMenu();
+                renderManageMenu();
 
                 // Poll notifications (customer mode)
                 if (currentMode === 'customer') {
                     const cloudNotifs = await loadFromCloud('notifications');
-                    if (cloudNotifs.length > notifications.length) {
-                        const newNotifs = cloudNotifs.filter(n => !notifications.some(o => o.id === n.id));
-                        notifications = cloudNotifs;
-                        updateNotifyBell();
-                        if (newNotifs.length > 0) showPendingNotifications();
-                    }
+                    const newNotifs = cloudNotifs.filter(n => !notifications.some(o => o.id === n.id));
+                    notifications = cloudNotifs;
+                    updateNotifyBell();
+                    if (newNotifs.length > 0) showPendingNotifications();
                 }
 
                 // Poll requests (chef mode)
                 if (currentMode === 'chef') {
-                    const cloudReqs = await loadFromCloud('dish_requests');
-                    if (cloudReqs.length !== dishRequests.length) {
-                        dishRequests = cloudReqs;
-                        updateRequestBadge();
-                        if (document.getElementById('requests-section').classList.contains('active')) renderRequests();
-                    }
+                    dishRequests = await loadFromCloud('dish_requests');
+                    updateRequestBadge();
+                    if (document.getElementById('requests-section').classList.contains('active')) renderRequests();
                 }
             }, 5000);
         }
 
         // ── Save wrappers (cloud + local) ───────────────────────
 
-        async function saveMenuItems() {
+        // ── Cloud-only saves (localStorage is just cache, not truth) ──
+
+        function cacheLocal() {
+            // Cache current cloud state locally for offline fallback only
             safeSet('menuItems', menuItems);
-            if (cloudOk) console.log('☁️ 保存菜单到云端: ' + menuItems.length + ' 条');
+            safeSet('orderHistory', orderHistory);
+        }
+
+        async function saveMenuItems() {
             await Promise.all(menuItems.map(item => saveToCloud('menu_items', item.id, item)));
+            cacheLocal();
         }
 
         async function deleteMenuItemCloud(id) {
             await deleteFromCloud('menu_items', id);
-            safeSet('menuItems', menuItems);
         }
 
         async function saveOrders() {
-            safeSet('orderHistory', orderHistory);
-            if (cloudOk) console.log('☁️ 保存订单到云端: ' + orderHistory.length + ' 条');
             await Promise.all(orderHistory.map(o => saveToCloud('orders', o.id, o)));
+            cacheLocal();
         }
 
         async function saveRequests() {
-            safeSet('dishRequests', dishRequests);
-            if (cloudOk) console.log('☁️ 保存请求到云端: ' + dishRequests.length + ' 条');
             await Promise.all(dishRequests.map(r => saveToCloud('dish_requests', r.id, r)));
         }
 
         async function saveRequest(req) {
-            if (cloudOk) console.log('☁️ 保存请求: ' + req.name);
             await saveToCloud('dish_requests', req.id, req);
-            safeSet('dishRequests', dishRequests);
         }
 
         async function saveNotifications() {
-            safeSet('notifications', notifications);
-            if (cloudOk) console.log('☁️ 保存通知: ' + notifications.length + ' 条');
             await Promise.all(notifications.map(n => saveToCloud('notifications', n.id, n)));
         }
 
