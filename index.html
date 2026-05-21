@@ -2153,13 +2153,6 @@
         // Expose for console: type runCloudDiag() in F12
         window.runCloudDiag = runCloudDiag;
 
-        // Re-login link
-        const reloginLink = document.getElementById('reloginLink');
-        reloginLink.addEventListener('click', () => {
-            localStorage.removeItem('savedMode');
-            loginOverlay.classList.remove('hidden');
-        });
-
         // Switch mode link
         switchModeLink.addEventListener('click', () => {
             showConfirm('确定要切换身份吗？', '🔄', '切换身份').then(confirmed => {
