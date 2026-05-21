@@ -2224,8 +2224,7 @@
             showConfirm('确定要忽略这个请求吗？宝贝会伤心的~', '😢', '狠心忽略').then(confirmed => {
                 if (confirmed) {
                     dishRequests = dishRequests.filter(r => r.id !== requestId);
-                    saveRequests();
-                    deleteRequestCloud(requestId);
+                    deleteFromCloud('dish_requests', requestId);
                     renderRequests();
                     showToast('请求已忽略');
                 }
