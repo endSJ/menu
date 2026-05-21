@@ -1674,39 +1674,50 @@
                 if (!cloudOk) { console.log('🔄 轮询#' + pollCount + ' 尝试重连...'); await checkCloud(); }
                 if (!cloudOk) { console.warn('🔄 轮询#' + pollCount + ' cloudOk=false, 跳过'); return; }
 
-                // Poll — cloud always overwrites local, unconditionally
+                // Poll — only re-render when data actually changes
                 const cloudOrders = (await loadFromCloud('orders')).map(normalizeOrder);
-                orderHistory = cloudOrders;
-                if (currentMode === 'chef') renderChefOrders();
-                if (currentMode === 'customer' && document.getElementById('history-section').classList.contains('active')) renderHistory();
+                const ordersChanged = JSON.stringify(cloudOrders) !== JSON.stringify(orderHistory);
+                if (ordersChanged || cloudOrders.length !== orderHistory.length) {
+                    orderHistory = cloudOrders;
+                    if (currentMode === 'chef') renderChefOrders();
+                    if (currentMode === 'customer' && document.getElementById('history-section').classList.contains('active')) renderHistory();
+                }
 
                 const rawMenu = await loadFromCloud('menu_items');
                 const cloudMenu = rawMenu.map(normalizeMenuItem);
-                console.log('🔄#' + pollCount + ' 菜单: 云端' + cloudMenu.length + '条 本地' + menuItems.length + '条');
-                menuItems = cloudMenu;
-                cacheLocal();
-                Object.keys(cart).forEach(cid => {
-                    if (!menuItems.some(m => m.id === cid)) delete cart[cid];
-                });
-                saveCart();
-                renderCategories();
-                renderMenu();
-                renderManageMenu();
+                const menuChanged = JSON.stringify(cloudMenu) !== JSON.stringify(menuItems);
+                if (menuChanged) {
+                    console.log('🔄#' + pollCount + ' 菜单变化: ' + cloudMenu.length + '条');
+                    menuItems = cloudMenu;
+                    cacheLocal();
+                    Object.keys(cart).forEach(cid => {
+                        if (!menuItems.some(m => m.id === cid)) delete cart[cid];
+                    });
+                    saveCart();
+                    renderCategories();
+                    renderMenu();
+                    renderManageMenu();
+                }
 
                 // Poll notifications (customer mode)
                 if (currentMode === 'customer') {
                     const cloudNotifs = await loadFromCloud('notifications');
-                    const newNotifs = cloudNotifs.filter(n => !notifications.some(o => o.id === n.id));
-                    notifications = cloudNotifs;
-                    updateNotifyBell();
-                    if (newNotifs.length > 0) showPendingNotifications();
+                    if (JSON.stringify(cloudNotifs) !== JSON.stringify(notifications)) {
+                        const newNotifs = cloudNotifs.filter(n => !notifications.some(o => o.id === n.id));
+                        notifications = cloudNotifs;
+                        updateNotifyBell();
+                        if (newNotifs.length > 0) showPendingNotifications();
+                    }
                 }
 
                 // Poll requests (chef mode)
                 if (currentMode === 'chef') {
-                    dishRequests = await loadFromCloud('dish_requests');
-                    updateRequestBadge();
-                    if (document.getElementById('requests-section').classList.contains('active')) renderRequests();
+                    const newReqs = await loadFromCloud('dish_requests');
+                    if (JSON.stringify(newReqs) !== JSON.stringify(dishRequests)) {
+                        dishRequests = newReqs;
+                        updateRequestBadge();
+                        if (document.getElementById('requests-section').classList.contains('active')) renderRequests();
+                    }
                 }
             }, 5000);
         }
