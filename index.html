@@ -2080,7 +2080,8 @@
                 });
             });
             saveOrders();
-            addNotification(null, 'item_accepted', `男友接单啦~「${name}」x${qty} 马上做！🔥`, false);
+            const mealLabel = MEAL_LABELS[meal] || meal;
+            addNotification(null, 'item_accepted', `男友接单啦~${mealLabel}「${name}」x${qty} 马上做！🔥`, false);
             renderChefOrders();
             showToast('已接单 ✨');
         }
@@ -2108,9 +2109,10 @@
                 });
             });
             saveOrders();
+            const mealLabel = MEAL_LABELS[meal] || meal;
             const msg = declineQty < qty
-                ? `男友婉拒了「${name}」中的 ${declineQty} 份：${reason} 😢\n剩余 ${qty - declineQty} 份待确认`
-                : `男友说「${name}」做不了：${reason} 😢`;
+                ? `男友婉拒了${mealLabel}「${name}」中的 ${declineQty} 份：${reason} 😢\n剩余 ${qty - declineQty} 份待确认`
+                : `男友说${mealLabel}「${name}」做不了：${reason} 😢`;
             addNotification(null, 'item_declined', msg, true);
             renderChefOrders();
             showToast('已婉拒');
