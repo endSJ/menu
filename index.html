@@ -1311,6 +1311,7 @@
         <h1>宝贝点餐台 💕</h1>
         <p id="headerSubtitle">想吃什么，我都给你做~ <span class="notify-bell" id="notifyBell" style="display:none;" title="新消息">🔔</span></p>
         <div class="switch-mode-link" id="switchModeLink">🔄 切换身份</div>
+        <div class="switch-mode-link" id="syncNowLink" style="margin-left:12px;">☁️ 同步</div>
     </header>
 
     <div class="container">
@@ -1517,26 +1518,33 @@
         // ── Cloud data helpers ───────────────────────────────────
 
         async function loadFromCloud(table) {
+            if (!cloudOk) return [];
             try {
                 const res = await fetch(`${SB_URL}/${table}?select=*`, { headers: SB_HEADERS });
-                if (!res.ok) { console.warn('load', table, res.status); return []; }
+                if (!res.ok) {
+                    if (res.status === 401 || res.status === 403) cloudOk = false;
+                    return [];
+                }
                 const rows = await res.json();
                 return (rows || []).map(r => r.data);
             } catch (e) { cloudOk = false; return []; }
         }
 
         async function saveToCloud(table, id, payload) {
+            if (!cloudOk) return;
             try {
                 const body = JSON.stringify({ id: String(id), data: payload });
-                // Skip if payload is too large (> 900KB, Supabase limit ~1MB)
-                if (body.length > 900000) { console.warn('Payload too large for', table, id, body.length); return; }
-                // POST with upsert (merge on duplicate primary key)
-                await fetch(`${SB_URL}/${table}`, {
+                if (body.length > 900000) { console.warn('Too large:', table, id, body.length); return; }
+                const res = await fetch(`${SB_URL}/${table}`, {
                     method: 'POST',
                     headers: { ...SB_HEADERS, Prefer: 'resolution=merge-duplicates' },
                     body
                 });
-            } catch (e) { console.warn('Save error:', table, e); }
+                if (!res.ok) {
+                    console.warn('Save failed:', table, id, res.status);
+                    if (res.status === 401 || res.status === 403) cloudOk = false;
+                }
+            } catch (e) { console.warn('Save error:', table, id, e.message); cloudOk = false; }
         }
 
         async function deleteFromCloud(table, id) {
@@ -1579,7 +1587,7 @@
             };
         }
 
-        // ── Init: cloud first, local fallback ────────────────────
+        // ── Init: cloud ALWAYS wins, local is just fallback ──────
 
         async function initData() {
             const [cloudMenu, cloudOrders, cloudRequests, cloudNotifs] = await Promise.all([
@@ -1589,14 +1597,44 @@
                 loadFromCloud('notifications')
             ]);
 
-            menuItems = (cloudMenu.length ? cloudMenu : menuItems).map(normalizeMenuItem);
-            orderHistory = (cloudOrders.length ? cloudOrders : orderHistory).map(normalizeOrder);
+            // Cloud always overwrites local
+            menuItems = cloudMenu.length ? cloudMenu.map(normalizeMenuItem) : menuItems.map(normalizeMenuItem);
+            if (cloudMenu.length) safeSet('menuItems', menuItems);
+
+            orderHistory = cloudOrders.length ? cloudOrders.map(normalizeOrder) : orderHistory.map(normalizeOrder);
+            if (cloudOrders.length) safeSet('orderHistory', orderHistory);
+
             dishRequests = cloudRequests.length ? cloudRequests : dishRequests;
+            if (cloudRequests.length) safeSet('dishRequests', dishRequests);
+
             notifications = cloudNotifs.length ? cloudNotifs : notifications;
+            if (cloudNotifs.length) safeSet('notifications', notifications);
 
             const nc = {};
             for (const [k, v] of Object.entries(cart)) nc[String(k)] = v;
             cart = nc;
+        }
+
+        // Force pull latest from cloud
+        async function syncNow() {
+            if (!cloudOk) return;
+            showToast('同步中... 🔄');
+            const [cloudMenu, cloudOrders, cloudRequests, cloudNotifs] = await Promise.all([
+                loadFromCloud('menu_items'),
+                loadFromCloud('orders'),
+                loadFromCloud('dish_requests'),
+                loadFromCloud('notifications')
+            ]);
+            if (cloudMenu.length) { menuItems = cloudMenu.map(normalizeMenuItem); safeSet('menuItems', menuItems); }
+            if (cloudOrders.length) { orderHistory = cloudOrders.map(normalizeOrder); safeSet('orderHistory', orderHistory); }
+            if (cloudRequests.length) { dishRequests = cloudRequests; safeSet('dishRequests', dishRequests); }
+            if (cloudNotifs.length) { notifications = cloudNotifs; safeSet('notifications', notifications); }
+            renderCategories();
+            renderMenu();
+            updateNotifyBell();
+            updateRequestBadge();
+            if (currentMode === 'chef') renderChefOrders();
+            showToast('同步完成 ✅');
         }
 
         // ── Cloud polling (replaces Realtime, no SDK needed) ─────
@@ -1965,6 +2003,10 @@
                 }
             });
         });
+
+        // Sync now link
+        const syncNowLink = document.getElementById('syncNowLink');
+        syncNowLink.addEventListener('click', syncNow);
 
         // Switch mode link
         switchModeLink.addEventListener('click', () => {
