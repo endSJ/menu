@@ -1337,6 +1337,7 @@
             <button class="tab-btn" data-tab="manage" id="manageTabBtn">餐食管理 🍽️</button>
             <button class="tab-btn" data-tab="requests" id="requestsTabBtn">新菜请求 <span class="badge" id="requestBadge" style="display:none">0</span></button>
             <button class="tab-btn" data-tab="history" id="historyTabBtn">我的订单 💌</button>
+            <button class="tab-btn" data-tab="oldorders" id="oldOrdersTabBtn">历史订单 📅</button>
         </div>
 
         <!-- Menu Section -->
@@ -1418,9 +1419,14 @@
             </div>
         </div>
 
-        <!-- History Section -->
+        <!-- My Orders Section (today) -->
         <div class="section" id="history-section">
             <div class="history-list" id="historyList"></div>
+        </div>
+
+        <!-- Old Orders Section (1-7 days ago) -->
+        <div class="section" id="oldorders-section">
+            <div class="history-list" id="oldOrdersList"></div>
         </div>
     </div>
 
@@ -1620,6 +1626,8 @@
             orderHistory = cloudOrders.map(normalizeOrder);
             dishRequests = cloudRequests.map(r => ({ declined: false, seenByGirl: true, ...r }));
             notifications = cloudNotifs;
+            // Remove orders older than 7 days
+            cleanupOldOrders();
             // Cache what cloud gave us (for offline startup only)
             cacheLocal();
 
@@ -1685,8 +1693,12 @@
                 const ordersChanged = JSON.stringify(cloudOrders) !== JSON.stringify(orderHistory);
                 if (ordersChanged || cloudOrders.length !== orderHistory.length) {
                     orderHistory = cloudOrders;
+                    cleanupOldOrders();
                     if (currentMode === 'chef') renderChefOrders();
-                    if (currentMode === 'customer' && document.getElementById('history-section').classList.contains('active')) renderHistory();
+                    if (currentMode === 'customer') {
+                        if (document.getElementById('history-section').classList.contains('active')) renderHistory();
+                        if (document.getElementById('oldorders-section').classList.contains('active')) renderOldOrders();
+                    }
                 }
 
                 const rawMenu = await loadFromCloud('menu_items');
@@ -1807,6 +1819,8 @@
         const manageCategoryFilter = document.getElementById('manageCategoryFilter');
         const manageMenuGrid = document.getElementById('manageMenuGrid');
         const historyTabBtn = document.getElementById('historyTabBtn');
+        const oldOrdersTabBtn = document.getElementById('oldOrdersTabBtn');
+        const oldOrdersList = document.getElementById('oldOrdersList');
         const notifyBell = document.getElementById('notifyBell');
         const modalTextarea = document.getElementById('modalTextarea');
         const orderStatusOverlay = document.getElementById('orderStatusOverlay');
@@ -1855,6 +1869,7 @@
                 manageTabBtn.style.display = 'none';
                 requestsTabBtn.style.display = 'none';
                 historyTabBtn.style.display = '';
+                oldOrdersTabBtn.style.display = '';
                 customerRequestHint.style.display = '';
                 orderPanel.style.display = '';
                 mealSelector.style.display = '';
@@ -1869,6 +1884,7 @@
                 manageTabBtn.style.display = '';
                 requestsTabBtn.style.display = '';
                 historyTabBtn.style.display = 'none';
+                oldOrdersTabBtn.style.display = 'none';
                 customerRequestHint.style.display = 'none';
                 orderPanel.style.display = 'none';
                 mealSelector.style.display = 'none';
@@ -1888,7 +1904,23 @@
             updateRequestBadge();
         }
 
-        function isToday(ts) {
+        function daysAgo(ts) {
+            const d = new Date(ts);
+            const now = new Date();
+            const dStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            const nStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            return Math.round((nStart - dStart) / 86400000);
+        }
+
+        function isToday(ts) { return daysAgo(ts) === 0; }
+
+        function cleanupOldOrders() {
+            // Remove orders older than 7 days from local and cloud
+            const toDelete = orderHistory.filter(o => o.timestamp && daysAgo(o.timestamp) > 7);
+            toDelete.forEach(o => deleteFromCloud('orders', o.id));
+            orderHistory = orderHistory.filter(o => !o.timestamp || daysAgo(o.timestamp) <= 7);
+            saveOrders();
+        }
             const d = new Date(ts);
             const now = new Date();
             return d.getFullYear() === now.getFullYear() &&
@@ -2359,6 +2391,9 @@
                 if (btn.dataset.tab === 'history') {
                     renderHistory();
                 }
+                if (btn.dataset.tab === 'oldorders') {
+                    renderOldOrders();
+                }
                 if (btn.dataset.tab === 'requests') {
                     renderRequests();
                 }
@@ -2514,33 +2549,25 @@
             showOrderStatus(order);
         });
 
-        // Render History
-        function renderHistory() {
-            if (orderHistory.length === 0) {
-                historyList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><p>暂无订单</p></div>';
+        // Render orders helper (shared by today + old orders)
+        function renderOrderGroup(list, container, showActions) {
+            if (list.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><p>暂无订单</p></div>';
                 return;
             }
-
-            // Group by meal time
             const groups = {};
-            orderHistory.forEach(order => {
+            list.forEach(order => {
                 const mt = order.mealTime || 'dinner';
                 if (!groups[mt]) groups[mt] = [];
                 groups[mt].push(order);
             });
-
             const mealOrder = ['breakfast', 'lunch', 'dinner'];
             let html = '';
-
             mealOrder.forEach(meal => {
                 if (!groups[meal] || groups[meal].length === 0) return;
-                html += `<div class="chef-order-group">
-                    <div class="chef-meal-header">${MEAL_LABELS[meal]}</div>`;
-
+                html += `<div class="chef-order-group"><div class="chef-meal-header">${MEAL_LABELS[meal]}</div>`;
                 groups[meal].forEach(order => {
                     const display = getStatusDisplay(order);
-                    const isTodayOrder = order.timestamp && isToday(order.timestamp);
-
                     html += `<div class="chef-order-card" style="cursor:pointer;" onclick="showOrderStatusById('${order.id}')">
                         <div class="chef-order-items">
                             ${order.items.map(item => `
@@ -2556,21 +2583,36 @@
                         <div class="chef-order-meta">
                             <div class="chef-order-time">${order.date}</div>
                             <div class="chef-order-total">¥${order.total.toFixed(2)}</div>
-                            ${isTodayOrder ? `<div style="display:flex;align-items:center;gap:4px;font-size:0.8rem;">
+                            ${isToday(order.timestamp) ? `<div style="display:flex;align-items:center;gap:4px;font-size:0.8rem;">
                                 <span>${display.icon}</span>
                                 <span style="color:${order.status === 'declined' ? '#d63031' : order.status === 'accepted' ? 'var(--tiffany-dark)' : 'var(--text-light)'};">${display.label}</span>
                             </div>` : ''}
-                            <div class="chef-order-actions" style="margin-top:4px;" onclick="event.stopPropagation();">
+                            ${showActions ? `<div class="chef-order-actions" style="margin-top:4px;" onclick="event.stopPropagation();">
                                 <button class="reorder-btn" onclick="reorder('${order.id}')" style="padding:6px 14px;font-size:0.8rem;">再来一单</button>
                                 <button class="delete-btn" onclick="deleteOrder('${order.id}')" style="padding:6px 14px;font-size:0.8rem;">删除</button>
-                            </div>
+                            </div>` : ''}
                         </div>
                     </div>`;
                 });
                 html += '</div>';
             });
+            container.innerHTML = html;
+        }
 
-            historyList.innerHTML = html;
+        // Render today's orders (我的订单)
+        function renderHistory() {
+            const todayOrders = orderHistory.filter(o => o.timestamp && isToday(o.timestamp));
+            renderOrderGroup(todayOrders, historyList, true);
+        }
+
+        // Render 1-7 days old orders (历史订单)
+        function renderOldOrders() {
+            const oldOrders = orderHistory.filter(o => {
+                if (!o.timestamp) return false;
+                const d = daysAgo(o.timestamp);
+                return d >= 1 && d <= 7;
+            });
+            renderOrderGroup(oldOrders, oldOrdersList, true);
         }
 
         function showOrderStatusById(orderId) {
