@@ -2784,12 +2784,18 @@
             try {
                 cloudOk = await checkCloud();
                 console.log('☁️ 云端状态: ' + (cloudOk ? '连接成功' : '未连接'));
-                if (cloudOk) await initData();
-                setupPolling();
-                console.log('✅ 启动完成, 菜单=' + menuItems.length + ' 订单=' + orderHistory.length);
-            } catch (e) {
-                console.error('Boot error:', e.message);
-            }
+                if (cloudOk) {
+                    try {
+                        await Promise.race([
+                            initData(),
+                            new Promise((_, rj) => setTimeout(() => rj(new Error('超时')), 10000))
+                        ]);
+                    } catch (e) { console.warn('initData 失败: ' + e.message); }
+                }
+            } catch (e) { console.error('启动异常: ' + e.message); }
+            // Polling ALWAYS starts, no matter what
+            setupPolling();
+            console.log('✅ 启动完成, 菜单=' + menuItems.length + ' 订单=' + orderHistory.length);
         }
         boot();
     </script>
