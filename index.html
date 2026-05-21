@@ -2024,14 +2024,10 @@
             notifyTabBtn.style.display = '';
             const unread = notifications.filter(n => !n.read).length;
             const hasImportant = notifications.some(n => !n.read && n.important);
-            if (unread > 0) {
-                notifyTabBtn.textContent = (hasImportant ? '🚨' : '🔔') + ' 消息';
-                notifyBadge.textContent = unread;
-                notifyBadge.style.display = '';
-            } else {
-                notifyTabBtn.textContent = '🔔 消息';
-                notifyBadge.style.display = 'none';
-            }
+            notifyTabBtn.textContent = (hasImportant ? '🚨' : '🔔') + ' 消息';
+            notifyBadge.textContent = unread;
+            notifyBadge.style.display = '';
+            notifyBadge.style.background = hasImportant ? '#e74c3c' : 'var(--pink-accent)';
         }
 
         function renderNotifyPanel() {
@@ -2092,7 +2088,7 @@
             order.status = 'declined';
             order.declineReason = reason;
             saveOrders();
-            addNotification(orderId, 'declined', `男友说「${order.items[0]?.name || '这个'}」做不了：${reason} 😢\n等宝贝下次再点~`);
+            addNotification(orderId, 'declined', `男友说「${order.items[0]?.name || '这个'}」做不了：${reason} 😢\n等宝贝下次再点~`, true);
             renderChefOrders();
             showToast('已婉拒，宝贝会收到通知');
         }
