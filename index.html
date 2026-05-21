@@ -1519,15 +1519,18 @@
 
         async function loadFromCloud(table) {
             if (!cloudOk) return [];
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000); // 8s timeout
             try {
-                const res = await fetch(`${SB_URL}/${table}?select=*`, { headers: SB_HEADERS });
+                const res = await fetch(`${SB_URL}/${table}?select=*`, { headers: SB_HEADERS, signal: controller.signal });
+                clearTimeout(timer);
                 if (!res.ok) {
                     if (res.status === 401 || res.status === 403) cloudOk = false;
                     return [];
                 }
                 const rows = await res.json();
                 return (rows || []).map(r => r.data);
-            } catch (e) { return []; }  // transient error, don't disable cloud
+            } catch (e) { clearTimeout(timer); console.warn('load error: ' + table + ' - ' + e.message); return []; }
         }
 
         async function saveToCloud(table, id, payload) {
@@ -1592,12 +1595,16 @@
         // ── Init: cloud ALWAYS wins, local is just fallback ──────
 
         async function initData() {
-            const [cloudMenu, cloudOrders, cloudRequests, cloudNotifs] = await Promise.all([
+            console.log('📡 正在加载云端数据...');
+            const results = await Promise.all([
                 loadFromCloud('menu_items'),
                 loadFromCloud('orders'),
                 loadFromCloud('dish_requests'),
                 loadFromCloud('notifications')
             ]);
+            console.log('📡 云端加载完成: 菜单' + results[0].length + ' 订单' + results[1].length + ' 请求' + results[2].length + ' 通知' + results[3].length);
+
+            const [cloudMenu, cloudOrders, cloudRequests, cloudNotifs] = results;
 
             // Cloud always overwrites local
             menuItems = cloudMenu.length ? cloudMenu.map(normalizeMenuItem) : menuItems.map(normalizeMenuItem);
