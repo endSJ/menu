@@ -1687,11 +1687,16 @@
                     }
                 }
 
-                // Poll menu
+                // Poll menu — cloud is truth, overwrite local completely
                 const cloudMenu = (await loadFromCloud('menu_items')).map(normalizeMenuItem);
                 if (cloudMenu.length > 0 && JSON.stringify(cloudMenu) !== JSON.stringify(menuItems)) {
                     menuItems = cloudMenu;
                     safeSet('menuItems', menuItems);
+                    // Remove cloud-deleted items from cart too
+                    Object.keys(cart).forEach(cid => {
+                        if (!menuItems.some(m => m.id === cid)) delete cart[cid];
+                    });
+                    saveCart();
                     renderCategories();
                     renderMenu();
                     renderManageMenu();
@@ -2723,15 +2728,14 @@
             orderStatusOverlay.style.display = 'flex';
         }
 
-        // Delete Menu Item
         async function deleteMenuItem(id) {
             const confirmed = await showConfirm('确定要删除这个菜品吗？', '😢', '确定删除');
             if (confirmed) {
                 menuItems = menuItems.filter(item => item.id !== id);
                 delete cart[id];
                 saveCart();
-                saveMenuItems();
-                deleteMenuItemCloud(id);
+                // Delete from cloud; local is already correct
+                await deleteMenuItemCloud(id);
                 renderCategories();
                 renderMenu();
                 renderOrderPanel();
