@@ -1994,7 +1994,7 @@
                             ${pendingQty > 0 ? `<div class="chef-order-actions">
                                 <button class="accept-btn" onclick="acceptItem('${sid}', '${m.name.replace(/'/g, "\\'")}', ${pendingQty}, '${meal}')">接单 ✨</button>
                                 <button class="decline-btn" onclick="declineItem('${sid}', '${m.name.replace(/'/g, "\\'")}', ${pendingQty}, '${meal}')">婉拒 😢</button>
-                            </div>` : `<span class="chef-status-badge accepted">已处理 ✅</span>`}
+                            </div>` : (m.declinedQty === m.qty ? `<span class="chef-status-badge declined">已婉拒 ✕</span>` : m.acceptedQty === m.qty ? `<span class="chef-status-badge accepted">已接单 ✅</span>` : `<span style="font-size:0.78rem;color:var(--text-light);">已处理</span>`)}
                         </div>
                     </div>`;
                 });
