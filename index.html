@@ -1965,41 +1965,38 @@
                 const mealOrders = todayOrders.filter(o => (o.mealTime || 'dinner') === meal);
                 if (mealOrders.length === 0) return;
 
-                // Merge items by status (each item is 1 portion now)
-                const merged = {};
+                // Collect all items in this meal, grouped by name
+                const allItems = [];
                 mealOrders.forEach(order => {
-                    (order.items || []).forEach(item => {
-                        const key = item.menuItemId || item.name;
-                        if (!merged[key]) merged[key] = { ...item, qty: 0, acceptedQty: 0, declinedQty: 0, declineReason: '' };
-                        merged[key].qty += 1;
-                        if (item.status === 'accepted') merged[key].acceptedQty += 1;
-                        else if (item.status === 'declined') { merged[key].declinedQty += 1; merged[key].declineReason = item.declineReason || merged[key].declineReason; }
-                    });
+                    (order.items || []).forEach(item => { allItems.push(item); });
                 });
+                const byName = {};
+                allItems.forEach(item => { const k = item.menuItemId || item.name; if (!byName[k]) byName[k] = []; byName[k].push(item); });
 
-                html += `<div class="chef-order-group"><div class="chef-meal-header">${mealLabels[meal]}</div><div class="chef-order-card"><div class="chef-order-items">`;
-                const entries = Object.values(merged);
-                entries.forEach(m => {
-                    const pendingQty = m.qty - m.acceptedQty - m.declinedQty;
-                    const sid = m.menuItemId || '';
-                    html += `<div class="chef-order-item-row">
-                        ${m.image ? `<img class="chef-order-item-img" src="${m.image}" alt="${m.name}" onerror="this.style.display='none'">` : ''}
-                        <div class="chef-order-item-info">
-                            <div class="name">${m.name}${m.qty > 1 ? ' x' + m.qty : ''}</div>
-                            <div class="meta">¥${m.price.toFixed(2)}/份 · 共¥${(m.price * m.qty).toFixed(2)}</div>
-                            ${m.acceptedQty > 0 ? `<div style="font-size:0.75rem;color:var(--tiffany-dark);">已接 ${m.acceptedQty} 份 ✅</div>` : ''}
-                            ${m.declinedQty > 0 ? `<div style="font-size:0.75rem;color:#d63031;">已婉拒 ${m.declinedQty} 份 ✕${m.declineReason ? ' ' + m.declineReason : ''}</div>` : ''}
-                            ${pendingQty > 0 && (m.acceptedQty > 0 || m.declinedQty > 0) ? `<div style="font-size:0.75rem;color:var(--text-light);">还剩 ${pendingQty} 份未处理</div>` : ''}
-                        </div>
-                        <div style="flex-shrink:0;text-align:right;">
-                            ${pendingQty > 0 ? `<div class="chef-order-actions">
-                                <button class="accept-btn" onclick="acceptItem('${sid}', '${m.name.replace(/'/g, "\\'")}', ${pendingQty}, '${meal}')">接单 ✨</button>
-                                <button class="decline-btn" onclick="declineItem('${sid}', '${m.name.replace(/'/g, "\\'")}', ${pendingQty}, '${meal}')">婉拒 😢</button>
-                            </div>` : (m.declinedQty === m.qty ? `<span class="chef-status-badge declined">已婉拒 ✕</span>` : m.acceptedQty === m.qty ? `<span class="chef-status-badge accepted">已接单 ✅</span>` : `<span style="font-size:0.78rem;color:var(--text-light);">已处理</span>`)}
-                        </div>
-                    </div>`;
+                html += `<div class="chef-order-group"><div class="chef-meal-header">${mealLabels[meal]}</div>`;
+                Object.entries(byName).forEach(([key, items]) => {
+                    const total = items.length;
+                    html += `<div class="chef-order-card"><div class="chef-order-items">`;
+                    items.forEach((item, idx) => {
+                        const portion = idx + 1;
+                        const stat = item.status;
+                        html += `<div class="chef-order-item-row" style="opacity:${stat !== 'pending' ? '0.55' : '1'};">
+                            ${item.image ? `<img class="chef-order-item-img" src="${item.image}" alt="${item.name}" onerror="this.style.display='none'">` : ''}
+                            <div class="chef-order-item-info">
+                                <div class="name">${item.name} · 第 ${portion}/${total} 份</div>
+                                <div class="meta">¥${item.price.toFixed(2)}</div>
+                            </div>
+                            <div style="flex-shrink:0;text-align:right;">
+                                ${stat === 'pending' ? `<div class="chef-order-actions">
+                                    <button class="accept-btn" onclick="acceptOne('${item.uid}')">接单 ✨</button>
+                                    <button class="decline-btn" onclick="declineOne('${item.uid}')">婉拒 😢</button>
+                                </div>` : stat === 'accepted' ? `<span style="font-size:0.78rem;color:var(--tiffany-dark);">已接单 ✅</span>` : `<span style="font-size:0.78rem;color:#d63031;">已婉拒 ✕${item.declineReason ? '<br><span style=font-size:0.7rem;>'+item.declineReason+'</span>' : ''}</span>`}
+                            </div>
+                        </div>`;
+                    });
+                    html += `</div></div>`;
                 });
-                html += `</div></div></div>`;
+                html += `</div>`;
             });
 
             menuGrid.innerHTML = html || '<div class="empty-state"><div class="empty-state-icon">📋</div><p>今天还没有订单，等宝贝点菜吧~</p></div>';
@@ -2072,56 +2069,37 @@
             updateNotifyBell();
         }
 
-        // Per-item accept/decline
-        async function acceptItem(menuItemId, name, qty, meal) {
-            let remaining = qty;
+        // Per-portion accept/decline by uid
+        function findItemByUid(uid) {
             for (const order of orderHistory) {
-                if (!order.timestamp || !isToday(order.timestamp)) continue;
-                if ((order.mealTime || 'dinner') !== meal) continue;
                 for (const item of (order.items || [])) {
-                    if (remaining <= 0) break;
-                    if ((item.menuItemId || item.name) === (menuItemId || name) && item.status === 'pending') {
-                        item.status = 'accepted';
-                        remaining--;
-                    }
+                    if (item.uid === uid) return { order, item };
                 }
             }
+            return null;
+        }
+
+        async function acceptOne(uid) {
+            const found = findItemByUid(uid);
+            if (!found || found.item.status !== 'pending') return;
+            found.item.status = 'accepted';
             saveOrders();
-            const mealLabel = MEAL_LABELS[meal] || meal;
-            const acceptedQty = qty - remaining;
-            addNotification(null, 'item_accepted', `男友接单啦~${mealLabel}「${name}」x${acceptedQty} 马上做！🔥`, false);
+            const meal = MEAL_LABELS[found.order.mealTime] || '';
+            addNotification(null, 'item_accepted', `男友接单啦~${meal}「${found.item.name}」马上做！🔥`, false);
             renderChefOrders();
             showToast('已接单 ✨');
         }
 
-        async function declineItem(menuItemId, name, qty, meal) {
-            let declineQty = qty;
-            if (qty > 1) {
-                const input = prompt(`「${name}」共 ${qty} 份，要婉拒几份？`, qty);
-                if (input === null) return;
-                declineQty = Math.max(1, Math.min(qty, parseInt(input) || qty));
-            }
-            const reason = await showDeclineModal(`${name}${declineQty < qty ? ' x' + declineQty : ''}`);
+        async function declineOne(uid) {
+            const found = findItemByUid(uid);
+            if (!found || found.item.status !== 'pending') return;
+            const reason = await showDeclineModal(found.item.name);
             if (!reason) return;
-            let remaining = declineQty;
-            for (const order of orderHistory) {
-                if (!order.timestamp || !isToday(order.timestamp)) continue;
-                if ((order.mealTime || 'dinner') !== meal) continue;
-                for (const item of (order.items || [])) {
-                    if (remaining <= 0) break;
-                    if ((item.menuItemId || item.name) === (menuItemId || name) && item.status === 'pending') {
-                        item.status = 'declined';
-                        item.declineReason = reason;
-                        remaining--;
-                    }
-                }
-            }
+            found.item.status = 'declined';
+            found.item.declineReason = reason;
             saveOrders();
-            const mealLabel = MEAL_LABELS[meal] || meal;
-            const msg = declineQty < qty
-                ? `男友婉拒了${mealLabel}「${name}」中的 ${declineQty} 份：${reason} 😢\n剩余 ${qty - declineQty} 份待确认`
-                : `男友说${mealLabel}「${name}」做不了：${reason} 😢`;
-            addNotification(null, 'item_declined', msg, true);
+            const meal = MEAL_LABELS[found.order.mealTime] || '';
+            addNotification(null, 'item_declined', `男友婉拒了${meal}「${found.item.name}」：${reason} 😢`, true);
             renderChefOrders();
             showToast('已婉拒');
         }
@@ -2631,7 +2609,7 @@
                 status: 'pending',
                 items: items.flatMap(([id, qty]) => {
                     const item = menuItems.find(i => i.id === id);
-                    return Array.from({length: qty}, () => ({ menuItemId: id, name: item.name, qty: 1, price: item.price, image: item.image || '', status: 'pending' }));
+                    return Array.from({length: qty}, () => ({ uid: generateId(), menuItemId: id, name: item.name, qty: 1, price: item.price, image: item.image || '', status: 'pending' }));
                 }),
                 total: items.reduce((sum, [id, qty]) => {
                     const item = menuItems.find(i => i.id === id);
