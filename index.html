@@ -1989,6 +1989,7 @@
                             <div class="meta">¥${m.price.toFixed(2)}/份 · 共¥${(m.price * m.qty).toFixed(2)}</div>
                             ${m.acceptedQty > 0 ? `<div style="font-size:0.75rem;color:var(--tiffany-dark);">已接 ${m.acceptedQty} 份 ✅</div>` : ''}
                             ${m.declinedQty > 0 ? `<div style="font-size:0.75rem;color:#d63031;">已婉拒 ${m.declinedQty} 份 ✕${m.declineReason ? ' ' + m.declineReason : ''}</div>` : ''}
+                            ${pendingQty > 0 && (m.acceptedQty > 0 || m.declinedQty > 0) ? `<div style="font-size:0.75rem;color:var(--text-light);">还剩 ${pendingQty} 份未处理</div>` : ''}
                         </div>
                         <div style="flex-shrink:0;text-align:right;">
                             ${pendingQty > 0 ? `<div class="chef-order-actions">
@@ -2073,20 +2074,22 @@
 
         // Per-item accept/decline
         async function acceptItem(menuItemId, name, qty, meal) {
-            const updated = [];
-            orderHistory.forEach(order => {
-                if (!order.timestamp || !isToday(order.timestamp)) return;
-                if ((order.mealTime || 'dinner') !== meal) return;
-                (order.items || []).forEach(item => {
-                    if ((item.menuItemId || item.name) === (menuItemId || name)) {
+            let remaining = qty;
+            for (const order of orderHistory) {
+                if (!order.timestamp || !isToday(order.timestamp)) continue;
+                if ((order.mealTime || 'dinner') !== meal) continue;
+                for (const item of (order.items || [])) {
+                    if (remaining <= 0) break;
+                    if ((item.menuItemId || item.name) === (menuItemId || name) && item.status === 'pending') {
                         item.status = 'accepted';
-                        updated.push(item.name);
+                        remaining--;
                     }
-                });
-            });
+                }
+            }
             saveOrders();
             const mealLabel = MEAL_LABELS[meal] || meal;
-            addNotification(null, 'item_accepted', `男友接单啦~${mealLabel}「${name}」x${qty} 马上做！🔥`, false);
+            const acceptedQty = qty - remaining;
+            addNotification(null, 'item_accepted', `男友接单啦~${mealLabel}「${name}」x${acceptedQty} 马上做！🔥`, false);
             renderChefOrders();
             showToast('已接单 ✨');
         }
