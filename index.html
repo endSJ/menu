@@ -2646,24 +2646,29 @@
                 html += `<div class="chef-order-group"><div class="chef-meal-header">${MEAL_LABELS[meal]}</div>`;
                 groups[meal].forEach(order => {
                     const display = getStatusDisplay(order);
-                    // Merge items for display
-                    const displayItems = {};
+                    // Group items by name, show per-portion
+                    const byName = {};
                     order.items.forEach(item => {
                         const k = item.menuItemId || item.name;
-                        if (!displayItems[k]) displayItems[k] = { ...item, qty: 0 };
-                        displayItems[k].qty++;
+                        if (!byName[k]) byName[k] = [];
+                        byName[k].push(item);
                     });
                     html += `<div class="chef-order-card" style="cursor:pointer;" onclick="showOrderStatusById('${order.id}')">
                         <div class="chef-order-items">
-                            ${Object.values(displayItems).map(item => `
-                                <div class="chef-order-item-row">
-                                    ${item.image ? `<img class="chef-order-item-img" src="${item.image}" alt="${item.name}" onerror="this.style.display='none'">` : ''}
-                                    <div class="chef-order-item-info">
-                                        <div class="name">${item.name}${item.qty > 1 ? ' x' + item.qty : ''}</div>
-                                        <div class="meta">¥${item.price.toFixed(2)}/份 · 共¥${(item.price * item.qty).toFixed(2)}</div>
+                            ${Object.entries(byName).map(([key, items]) => {
+                                const total = items.length;
+                                return items.map((item, idx) => `
+                                    <div class="chef-order-item-row" style="opacity:${item.status !== 'pending' ? '0.55' : '1'};">
+                                        ${item.image ? `<img class="chef-order-item-img" src="${item.image}" alt="${item.name}" onerror="this.style.display='none'">` : ''}
+                                        <div class="chef-order-item-info">
+                                            <div class="name">${item.name} · 第 ${idx + 1}/${total} 份</div>
+                                            <div class="meta">¥${item.price.toFixed(2)}
+                                                ${item.status === 'accepted' ? ' · 已接单 ✅' : item.status === 'declined' ? ' · 已婉拒 ✕' : ' · 待确认'}
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                            `).join('')}
+                                `).join('');
+                            }).join('')}
                         </div>
                         <div class="chef-order-meta">
                             <div class="chef-order-time">${order.date}</div>
