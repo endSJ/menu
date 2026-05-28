@@ -705,6 +705,26 @@
             text-align: center;
         }
 
+        /* Search Box */
+        .search-box {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 14px;
+        }
+        .search-box input {
+            width: 100%;
+            max-width: 360px;
+            padding: 8px 16px;
+            border: 2px solid var(--tiffany-light);
+            border-radius: 20px;
+            font-size: 0.9rem;
+            transition: border-color 0.2s ease;
+            outline: none;
+        }
+        .search-box input:focus {
+            border-color: var(--tiffany-blue);
+        }
+
         /* Category Filter */
         .category-filter {
             display: flex;
@@ -1440,6 +1460,7 @@
 
         <!-- Menu Section -->
         <div class="section active" id="menu-section">
+            <div class="search-box"><input type="text" id="menuSearch" placeholder="🔍 搜索菜品..."></div>
             <div class="category-filter" id="categoryFilter"></div>
             <div class="menu-layout">
                 <div class="meal-selector" id="mealSelector">
@@ -1521,6 +1542,7 @@
             <div style="max-width: 900px; margin: 0 auto;">
                 <h2 style="text-align: center; margin-bottom: 20px; color: var(--text-dark);">餐食管理 🍽️</h2>
                 <p style="text-align: center; color: var(--text-light); font-size: 0.85rem; margin-bottom: 20px;">点击菜品右上角 ✕ 即可下架</p>
+                <div class="search-box"><input type="text" id="manageSearch" placeholder="🔍 搜索菜品..."></div>
                 <div class="category-filter" id="manageCategoryFilter"></div>
                 <div class="menu-grid" id="manageMenuGrid"></div>
             </div>
@@ -2504,7 +2526,9 @@
 
         // Render manage menu (chef only, always shows delete)
         function renderManageMenu(category = 'all') {
-            const filtered = category === 'all' ? menuItems : menuItems.filter(item => item.category === category);
+            const keyword = (document.getElementById('manageSearch')?.value || '').trim().toLowerCase();
+            let filtered = category === 'all' ? menuItems : menuItems.filter(item => item.category === category);
+            if (keyword) filtered = filtered.filter(item => item.name.toLowerCase().includes(keyword));
             const fallbackImg = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='180'%3E%3Crect fill='%2381D8D0' width='400' height='180'/%3E%3Ctext fill='white' font-size='30' x='50%25' y='50%25' text-anchor='middle' dominant-baseline='middle'%3E🍰%3C/text%3E%3C/svg%3E`;
             manageMenuGrid.innerHTML = filtered.length ? filtered.map(item => `
                 <div class="menu-item" data-id="${item.id}">
@@ -2535,6 +2559,16 @@
                     renderManageMenu(btn.dataset.category);
                 });
             });
+
+            // Search listener for manage menu
+            const manageSearch = document.getElementById('manageSearch');
+            if (manageSearch && !manageSearch._bound) {
+                manageSearch._bound = true;
+                manageSearch.addEventListener('input', () => {
+                    const cat = manageCategoryFilter.querySelector('.category-btn.active')?.dataset.category || 'all';
+                    renderManageMenu(cat);
+                });
+            }
         }
 
         // Tab Navigation
@@ -2569,6 +2603,13 @@
         const cartMealLabel = document.getElementById('cartMealLabel');
         const MEAL_LABELS = { breakfast: '早餐 🌅', lunch: '午餐 ☀️', dinner: '晚餐 🌙' };
 
+        // Search
+        const menuSearch = document.getElementById('menuSearch');
+        menuSearch.addEventListener('input', () => {
+            const activeCategory = document.querySelector('.category-btn.active')?.dataset.category || 'all';
+            renderMenu(activeCategory);
+        });
+
         // Meal time selector
         document.querySelectorAll('.meal-select-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -2583,12 +2624,17 @@
 
         // Render Menu
         function renderMenu(category = 'all') {
+            const keyword = (document.getElementById('menuSearch')?.value || '').trim().toLowerCase();
             let filtered = category === 'all' ? menuItems : menuItems.filter(item => item.category === category);
             // Filter by selected meal time
             filtered = filtered.filter(item => {
                 if (!item.mealTimes || item.mealTimes.length === 0) return true;
                 return item.mealTimes.includes(selectedMeal);
             });
+            // Keyword search
+            if (keyword) {
+                filtered = filtered.filter(item => item.name.toLowerCase().includes(keyword));
+            }
             const fallbackImg = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='180'%3E%3Crect fill='%2381D8D0' width='400' height='180'/%3E%3Ctext fill='white' font-size='30' x='50%25' y='50%25' text-anchor='middle' dominant-baseline='middle'%3E🍰%3C/text%3E%3C/svg%3E`;
             const showDelete = currentMode === 'chef';
             menuGrid.innerHTML = filtered.length ? filtered.map(item => `
