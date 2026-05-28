@@ -1227,34 +1227,74 @@
 
             .order-panel {
                 position: fixed;
-                bottom: 10px;
-                left: 10px;
-                right: 10px;
-                width: auto;
-                max-height: 60vh;
-                border-radius: 16px;
+                bottom: 20px;
+                right: 16px;
+                width: 60px;
+                height: 60px;
+                max-height: none;
+                border-radius: 50%;
                 z-index: 100;
-                overflow: hidden;
+                overflow: visible;
+                transition: all 0.3s ease;
+            }
+            .order-panel .order-header {
+                width: 60px;
+                height: 60px;
+                border-radius: 50%;
+                cursor: pointer;
+                padding: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-direction: column;
+                box-shadow: 0 4px 20px rgba(255,182,193,0.5);
+            }
+            .order-panel .order-header h3 {
+                display: none;
+            }
+            .order-panel .order-count {
+                font-size: 0.85rem;
+                font-weight: 700;
             }
             .order-panel .order-body,
             .order-panel .order-total,
             .order-panel .submit-order-btn {
                 display: none;
             }
-            .order-panel.expanded .order-body,
-            .order-panel.expanded .order-total,
-            .order-panel.expanded .submit-order-btn {
+            .order-panel.expanded {
+                position: fixed;
+                bottom: 10px;
+                left: 10px;
+                right: 10px;
+                width: auto;
+                height: auto;
+                max-height: 60vh;
+                border-radius: 16px;
+                overflow: hidden;
+            }
+            .order-panel.expanded .order-header {
+                width: auto;
+                height: auto;
+                border-radius: 16px 16px 0 0;
+                padding: 12px 16px;
+                display: flex;
+                flex-direction: row;
+                justify-content: space-between;
+                box-shadow: none;
+            }
+            .order-panel.expanded .order-header h3 {
+                display: block;
+                font-size: 0.85rem;
+            }
+            .order-panel.expanded .order-body {
+                display: block;
+                overflow-y: auto;
+            }
+            .order-panel.expanded .order-total {
                 display: flex;
             }
             .order-panel.expanded .submit-order-btn {
                 display: block;
-            }
-            .order-panel .order-header {
-                cursor: pointer;
-                border-radius: 16px;
-            }
-            .order-panel.expanded .order-header {
-                border-radius: 16px 16px 0 0;
             }
 
             .tabs {
@@ -2636,9 +2676,17 @@
         }
 
         // Toggle cart on mobile
-        orderHeader.addEventListener('click', () => {
+        orderHeader.addEventListener('click', (e) => {
             if (window.innerWidth <= 768) {
+                e.stopPropagation();
                 orderPanel.classList.toggle('expanded');
+            }
+        });
+        document.addEventListener('click', (e) => {
+            if (window.innerWidth <= 768 && orderPanel.classList.contains('expanded')) {
+                if (!orderPanel.contains(e.target)) {
+                    orderPanel.classList.remove('expanded');
+                }
             }
         });
 
