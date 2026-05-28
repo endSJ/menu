@@ -32,7 +32,7 @@
         .container {
             max-width: 1100px;
             margin: 0 auto;
-            padding: 24px 20px 100px;
+            padding: 24px 8px 100px 20px;
         }
 
         /* Header */
@@ -737,10 +737,11 @@
             box-shadow: 0 3px 10px rgba(129, 216, 208, 0.3);
         }
 
-        /* Order Panel — right sidebar */
+        /* Order Panel — right sidebar on desktop */
         .order-panel {
             position: sticky;
             top: 20px;
+            right: 0;
             background: white;
             border-radius: 16px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.1);
@@ -751,6 +752,7 @@
             max-height: calc(100vh - 40px);
             display: flex;
             flex-direction: column;
+            margin-right: 0;
         }
 
         .order-header {
@@ -1188,7 +1190,7 @@
             }
 
             .container {
-                padding: 16px 12px 100px;
+                padding: 16px 12px 120px;
             }
 
             .menu-layout {
@@ -1224,9 +1226,14 @@
             }
 
             .order-panel {
-                position: static;
-                width: 100%;
-                max-height: none;
+                position: fixed;
+                bottom: 10px;
+                left: 10px;
+                right: 10px;
+                width: auto;
+                max-height: 60vh;
+                border-radius: 16px 16px 0 0;
+                z-index: 100;
             }
 
             .tabs {
