@@ -2546,12 +2546,28 @@
         }
 
         // Update Cart
-        function updateCart(id, delta) {
+        async function updateCart(id, delta) {
+            if (delta > 0) {
+                // Check if this dish already exists in today's orders for the selected meal
+                const item = menuItems.find(i => i.id === id);
+                const alreadyOrdered = orderHistory.some(order =>
+                    order.timestamp && isToday(order.timestamp) &&
+                    (order.mealTime || 'dinner') === selectedMeal &&
+                    (order.items || []).some(i => (i.menuItemId || i.name) === (id || item?.name))
+                );
+                if (alreadyOrdered) {
+                    const mealName = MEAL_LABELS[selectedMeal] || '';
+                    const confirmed = await showConfirm(
+                        `${mealName}已经点过「${item?.name || ''}」了哦~\n确定要再加一份吗？`,
+                        '🤔', '确定再加一份'
+                    );
+                    if (!confirmed) return;
+                }
+            }
             if (!cart[id]) cart[id] = 0;
             cart[id] = Math.max(0, cart[id] + delta);
             if (cart[id] === 0) delete cart[id];
             saveCart();
-            // Only update the quantity span for the specific item
             const quantitySpan = document.querySelector(`.menu-item[data-id="${id}"] .quantity`);
             if (quantitySpan) {
                 quantitySpan.textContent = cart[id] || 0;
