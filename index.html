@@ -1232,8 +1232,29 @@
                 right: 10px;
                 width: auto;
                 max-height: 60vh;
-                border-radius: 16px 16px 0 0;
+                border-radius: 16px;
                 z-index: 100;
+                overflow: hidden;
+            }
+            .order-panel .order-body,
+            .order-panel .order-total,
+            .order-panel .submit-order-btn {
+                display: none;
+            }
+            .order-panel.expanded .order-body,
+            .order-panel.expanded .order-total,
+            .order-panel.expanded .submit-order-btn {
+                display: flex;
+            }
+            .order-panel.expanded .submit-order-btn {
+                display: block;
+            }
+            .order-panel .order-header {
+                cursor: pointer;
+                border-radius: 16px;
+            }
+            .order-panel.expanded .order-header {
+                border-radius: 16px 16px 0 0;
             }
 
             .tabs {
@@ -2612,6 +2633,14 @@
                 ` : '';
             }).join('');
         }
+
+        // Toggle cart on mobile
+        const orderHeader = document.getElementById('orderHeader');
+        orderHeader.addEventListener('click', () => {
+            if (window.innerWidth <= 768) {
+                orderPanel.classList.toggle('expanded');
+            }
+        });
 
         // Submit Order
         submitOrderBtn.addEventListener('click', async () => {
