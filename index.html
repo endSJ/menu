@@ -2546,24 +2546,7 @@
         }
 
         // Update Cart
-        async function updateCart(id, delta) {
-            if (delta > 0) {
-                // Check if this dish already exists in today's orders for the selected meal
-                const item = menuItems.find(i => i.id === id);
-                const alreadyOrdered = orderHistory.some(order =>
-                    order.timestamp && isToday(order.timestamp) &&
-                    (order.mealTime || 'dinner') === selectedMeal &&
-                    (order.items || []).some(i => (i.menuItemId || i.name) === (id || item?.name))
-                );
-                if (alreadyOrdered) {
-                    const mealName = MEAL_LABELS[selectedMeal] || '';
-                    const confirmed = await showConfirm(
-                        `${mealName}已经点过「${item?.name || ''}」了哦~\n确定要再加一份吗？`,
-                        '🤔', '确定再加一份'
-                    );
-                    if (!confirmed) return;
-                }
-            }
+        function updateCart(id, delta) {
             if (!cart[id]) cart[id] = 0;
             cart[id] = Math.max(0, cart[id] + delta);
             if (cart[id] === 0) delete cart[id];
@@ -2610,11 +2593,33 @@
         });
 
         // Submit Order
-        submitOrderBtn.addEventListener('click', () => {
+        submitOrderBtn.addEventListener('click', async () => {
             const items = Object.entries(cart).filter(([id, qty]) => qty > 0 && menuItems.some(i => i.id === id));
             if (items.length === 0) {
                 showToast('购物车是空的哦~');
                 return;
+            }
+
+            // Build duplicate warnings
+            const mealName = MEAL_LABELS[selectedMeal] || selectedMeal;
+            const warnings = [];
+            items.forEach(([id, qty]) => {
+                const mi = menuItems.find(i => i.id === id);
+                if (!mi) return;
+                // Multiple portions in cart
+                if (qty > 1) warnings.push(`「${mi.name}」x${qty} 份`);
+                // Already ordered today in same meal
+                const already = orderHistory.some(order =>
+                    order.timestamp && isToday(order.timestamp) &&
+                    (order.mealTime || 'dinner') === selectedMeal &&
+                    (order.items || []).some(i => (i.menuItemId || i.name) === id)
+                );
+                if (already && qty === 1) warnings.push(`「${mi.name}」${mealName}已点过`);
+            });
+            if (warnings.length > 0) {
+                const msg = `${mealName}${warnings.join('，')}\n确定提交吗？`;
+                const confirmed = await showConfirm(msg, '🤔', '确定提交');
+                if (!confirmed) return;
             }
 
             const order = {
