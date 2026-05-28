@@ -1320,7 +1320,7 @@
     <div class="login-overlay" id="loginOverlay">
         <div class="login-card" id="loginCard">
             <div class="login-title">宝贝点餐台 💕</div>
-            <div class="login-subtitle" id="loginSubtitle">⏳ 正在同步云端数据...</div>
+            <div class="login-subtitle" id="loginSubtitle" style="display:none;">选择你的身份开始吧~</div>
             <div class="login-options" id="loginOptions" style="display:none;">
                 <div class="login-option" data-login="customer">
                     <div class="login-emoji">👧</div>
@@ -3084,10 +3084,7 @@
 
         // Show loading overlay immediately
         loginOverlay.classList.remove('hidden');
-        if (savedRole) {
-            loginOptions.style.display = 'none';
-            loadingMsg.style.display = '';
-        }
+        loadingMsg.style.display = '';
 
         async function boot() {
             console.log('🚀 启动中...');
@@ -3110,9 +3107,9 @@
             if (savedRole) {
                 enterApp(savedRole);
             } else {
-                loginOptions.style.display = '';
                 loadingMsg.style.display = 'none';
-                loginSubtitle.textContent = '选择你的身份开始吧~';
+                loginSubtitle.style.display = '';
+                loginOptions.style.display = '';
             }
         }
         boot();
