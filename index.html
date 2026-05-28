@@ -1409,7 +1409,7 @@
                 </div>
                 <div class="menu-grid" id="menuGrid"></div>
                 <div class="order-panel" id="orderPanel">
-                    <div class="order-header">
+                    <div class="order-header" id="orderHeader">
                         <h3>购物车 · <span id="cartMealLabel">早餐 🌅</span></h3>
                         <span class="order-count" id="orderCount">0 件</span>
                     </div>
@@ -1853,6 +1853,7 @@
         const menuGrid = document.getElementById('menuGrid');
         const categoryFilter = document.getElementById('categoryFilter');
         const orderPanel = document.getElementById('orderPanel');
+        const orderHeader = document.getElementById('orderHeader');
         const orderBody = document.getElementById('orderBody');
         const orderCount = document.getElementById('orderCount');
         const orderTotalAmount = document.getElementById('orderTotalAmount');
