@@ -172,17 +172,8 @@
         }
 
         /* Chef Order Cards */
-        .chef-orders-row {
-            display: flex;
-            gap: 16px;
-            overflow-x: auto;
-            padding-bottom: 8px;
-        }
-
         .chef-order-group {
-            flex: 1;
-            min-width: 280px;
-            max-width: 420px;
+            margin-bottom: 20px;
         }
 
         .chef-meal-header {
@@ -190,10 +181,15 @@
             background: var(--tiffany-light);
             border-radius: 12px;
             font-weight: 600;
-            font-size: 0.95rem;
+            font-size: 1rem;
             color: var(--text-dark);
             margin-bottom: 10px;
-            text-align: center;
+        }
+
+        .chef-order-card-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
         }
 
         .chef-order-card {
@@ -204,8 +200,7 @@
             display: flex;
             gap: 10px;
             align-items: flex-start;
-            position: relative;
-            overflow: hidden;
+            flex: 0 1 auto;
         }
 
         .chef-order-card.accepted {
@@ -218,11 +213,9 @@
         }
 
         .chef-order-items {
-            flex: 1;
             display: flex;
             flex-direction: column;
             gap: 6px;
-            min-width: 0;
         }
 
         .chef-order-item-row {
@@ -239,19 +232,10 @@
             flex-shrink: 0;
         }
 
-        .chef-order-item-info {
-            flex: 1;
-            min-width: 0;
-            overflow: hidden;
-        }
-
         .chef-order-item-info .name {
             font-weight: 500;
             font-size: 0.85rem;
             color: var(--text-dark);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
         }
 
         .chef-order-item-info .meta {
@@ -2089,7 +2073,7 @@
             const mealLabels = { breakfast: '早餐 🌅', lunch: '午餐 ☀️', dinner: '晚餐 🌙' };
             const mealOrder = ['breakfast', 'lunch', 'dinner'];
 
-            let html = '<div class="chef-orders-row">';
+            let html = '';
             mealOrder.forEach(meal => {
                 const mealOrders = todayOrders.filter(o => (o.mealTime || 'dinner') === meal);
                 if (mealOrders.length === 0) return;
@@ -2102,7 +2086,7 @@
                 const byName = {};
                 allItems.forEach(item => { const k = item.menuItemId || item.name; if (!byName[k]) byName[k] = []; byName[k].push(item); });
 
-                html += `<div class="chef-order-group"><div class="chef-meal-header">${mealLabels[meal]}</div>`;
+                html += `<div class="chef-order-group"><div class="chef-meal-header">${mealLabels[meal]}</div><div class="chef-order-card-wrap">`;
                 Object.entries(byName).forEach(([key, items]) => {
                     const total = items.length;
                     html += `<div class="chef-order-card"><div class="chef-order-items">`;
@@ -2125,10 +2109,9 @@
                     });
                     html += `</div></div>`;
                 });
-                html += `</div>`;
+                html += `</div></div>`;
             });
 
-            html += '</div>';
             menuGrid.innerHTML = html || '<div class="empty-state"><div class="empty-state-icon">📋</div><p>今天还没有订单，等宝贝点菜吧~</p></div>';
         }
 
