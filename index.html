@@ -2062,6 +2062,7 @@
         function renderChefOrders() {
             document.getElementById('categoryFilter').innerHTML = '';
             customerRequestHint.style.display = 'none';
+            menuGrid.style.display = 'block';
 
             const todayOrders = orderHistory
                 .filter(o => o.timestamp && isToday(o.timestamp))
@@ -2629,6 +2630,7 @@
 
         // Render Menu
         function renderMenu(category = 'all') {
+            menuGrid.style.display = '';
             const keyword = (document.getElementById('menuSearch')?.value || '').trim().toLowerCase();
             let filtered = category === 'all' ? menuItems : menuItems.filter(item => item.category === category);
             // Filter by selected meal time
