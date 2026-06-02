@@ -200,7 +200,7 @@
             display: flex;
             gap: 10px;
             align-items: flex-start;
-            flex: 0 1 auto;
+            flex-shrink: 0;
         }
 
         .chef-order-card.accepted {
@@ -222,6 +222,8 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            flex-wrap: nowrap;
+            white-space: nowrap;
         }
 
         .chef-order-item-img {
